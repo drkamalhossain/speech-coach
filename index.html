@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speech Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Hind+Siliguri:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--ink:#1d2433;--muted:#6b7385;--accent:#2f6fed;--good:#1f9d55;--ok:#d48a00;--bad:#d64545;--line:#e4e7ef}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,"Hind Siliguri",system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:720px;margin:0 auto;padding:16px}
+  header{display:flex;justify-content:space-between;align-items:center;margin:8px 0 16px}
+  h1{font-size:22px;margin:0}
+  .sub{color:var(--muted);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  h2{font-size:16px;margin:0 0 10px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:8px 14px;font:inherit;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .topic{display:block;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:10px;padding:12px;margin:6px 0;font:inherit;cursor:pointer}
+  .topic.on{border-color:var(--accent);background:#eef3ff}
+  input[type=text]{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit}
+  .big{width:100%;padding:16px;font-size:17px;font-weight:700;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer}
+  .big.stop{background:var(--bad)}
+  .big:disabled{opacity:.5;cursor:default}
+  .timer{font-size:44px;font-weight:700;text-align:center;margin:8px 0}
+  .meter{height:10px;background:var(--line);border-radius:6px;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:var(--good);transition:width .08s}
+  .live{min-height:60px;color:var(--muted);font-size:14px;margin-top:10px;white-space:pre-wrap}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .m{border:1px solid var(--line);border-radius:10px;padding:10px}
+  .m .k{font-size:12px;color:var(--muted)}
+  .m .v{font-size:20px;font-weight:700;margin:2px 0}
+  .tag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:20px;color:#fff;display:inline-block}
+  .g{background:var(--good)}.o{background:var(--ok)}.b{background:var(--bad)}
+  .overall{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  .ring{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-size:22px;font-weight:700;color:#fff}
+  ol.tips{padding-left:20px;margin:6px 0}ol.tips li{margin:8px 0;line-height:1.45}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 14px;font:inherit;cursor:pointer}
+  .hide{display:none}
+  .warn{background:#fff6e5;border:1px solid #f3d9a4;border-radius:10px;padding:10px;font-size:14px}
+  details{font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>🎙️ Speech Coach</h1><div class="sub">1 minute a day. Speak, review, improve.</div></div>
+    <div class="seg" id="langSeg">
+      <button data-l="en" class="on">English</button><button data-l="bn">বাংলা</button>
+    </div>
+  </header>
+
+  <div id="support" class="warn hide"></div>
+
+  <!-- STEP 1: TOPIC -->
+  <div class="card" id="topicCard">
+    <h2>1. Pick today's topic</h2>
+    <div id="topics"></div>
+    <button class="topic" id="ownBtn">✏️ My own topic</button>
+    <input type="text" id="ownInput" class="hide" placeholder="Type your topic">
+  </div>
+
+  <!-- STEP 2: RECORD -->
+  <div class="card" id="recCard">
+    <h2>2. Speak for 1 minute</h2>
+    <div class="sub" id="chosenTopic">Choose a topic above.</div>
+    <div class="timer" id="timer">1:00</div>
+    <div class="meter"><i id="lvl"></i></div>
+    <div style="height:12px"></div>
+    <button class="big" id="recBtn" disabled>Start speaking</button>
+    <div class="live" id="live"></div>
+  </div>
+
+  <!-- STEP 3: RESULTS -->
+  <div class="card hide" id="resCard">
+    <h2>3. Your score card</h2>
+    <div class="overall"><div class="ring" id="ring">–</div><div><b id="verdict"></b><div class="sub" id="resTopic"></div></div></div>
+    <div class="grid" id="metrics"></div>
+    <h2 style="margin-top:16px">Coach's tips for tomorrow</h2>
+    <ol class="tips" id="tips"></ol>
+    <details><summary>What I heard (transcript)</summary><p id="transcript"></p></details>
+    <div class="row">
+      <button class="btn" id="copyBtn">📋 Copy report (paste to Claude for deeper feedback)</button>
+      <button class="btn" id="againBtn">🔁 Try again</button>
+    </div>
+    <div class="sub" id="copyMsg"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="card">
+    <h2>Recent sessions</h2>
+    <div id="history" class="sub">No sessions yet.</div>
+  </div>
+</div>
+
+<script>
+// ---------- DATA ----------
+const TOPICS = {
+  en: [
+    "Explain to a junior doctor why we pre-oxygenate before induction.",
+    "Describe your ideal teaching session for FCPS students.",
+    "What makes a good teacher memorable?",
+    "Tell me about a busy day in the cardiac ICU.",
+    "How would you calm an anxious patient before surgery?",
+    "Your favourite place in Dhaka and why.",
+    "Should doctors use AI in daily practice?",
+    "Describe a mistake you learned a lot from.",
+    "How do you manage stress during exams?",
+    "Explain the airway to someone with no medical background.",
+    "What would you change about medical education in Bangladesh?",
+    "Describe your morning routine.",
+    "A book or film that changed how you think.",
+    "How to give feedback to a student who answered wrongly.",
+    "Why is teamwork important in the operating theatre?",
+    "Plan a perfect weekend for your family.",
+    "How do you prepare for an important presentation?",
+    "Explain what anaesthesia is to a 10-year-old.",
+    "The best advice you have ever received.",
+    "How has social media changed the way people talk?",
+    "Describe a patient who taught you something.",
+    "What does good communication mean to you?",
+    "How should a student approach MCQs on exam day?",
+    "Introduce yourself to a new class of students.",
+    "Is it better to be a specialist or a generalist?",
+    "Describe your hometown to a foreigner.",
+    "What skill do you want to learn this year and why?",
+    "How to stay healthy with long duty hours.",
+    "Convince a student that physiology is interesting.",
+    "Describe a moment you felt proud at work."
+  ],
+  bn: [
+    "একজন জুনিয়র ডাক্তারকে বোঝান কেন ইন্ডাকশনের আগে প্রি-অক্সিজেনেশন জরুরি।",
+    "আপনার আদর্শ এফসিপিএস ক্লাস কেমন হবে বর্ণনা করুন।",
+    "একজন ভালো শিক্ষককে কেন মনে থাকে?",
+    "কার্ডিয়াক আইসিইউতে একটি ব্যস্ত দিনের কথা বলুন।",
+    "অপারেশনের আগে একজন ভীত রোগীকে কীভাবে শান্ত করবেন?",
+    "ঢাকায় আপনার প্রিয় জায়গা এবং কেন।",
+    "ডাক্তারদের কি দৈনন্দিন কাজে এআই ব্যবহার করা উচিত?",
+    "এমন একটি ভুলের কথা বলুন যা থেকে অনেক শিখেছেন।",
+    "পরীক্ষার সময় চাপ কীভাবে সামলান?",
+    "বাংলাদেশের মেডিকেল শিক্ষায় কী পরিবর্তন আনতে চান?",
+    "আপনার সকালের রুটিন বর্ণনা করুন।",
+    "একটি বই বা সিনেমা যা আপনার চিন্তা বদলে দিয়েছে।",
+    "ভুল উত্তর দেওয়া ছাত্রকে কীভাবে ফিডব্যাক দেবেন?",
+    "অপারেশন থিয়েটারে টিমওয়ার্ক কেন গুরুত্বপূর্ণ?",
+    "পরিবারের সাথে একটি সুন্দর ছুটির দিনের পরিকল্পনা করুন।",
+    "গুরুত্বপূর্ণ প্রেজেন্টেশনের আগে কীভাবে প্রস্তুতি নেন?",
+    "একটি দশ বছরের শিশুকে অ্যানেসথেসিয়া কী তা বোঝান।",
+    "জীবনে পাওয়া সেরা উপদেশটি কী?",
+    "সোশ্যাল মিডিয়া মানুষের কথা বলার ধরন কীভাবে বদলেছে?",
+    "এমন একজন রোগীর কথা বলুন যিনি আপনাকে কিছু শিখিয়েছেন।",
+    "ভালো যোগাযোগ বলতে আপনি কী বোঝেন?",
+    "পরীক্ষার দিন এমসিকিউ কীভাবে উত্তর করা উচিত?",
+    "নতুন একটি ক্লাসের সামনে নিজের পরিচয় দিন।",
+    "আপনার নিজের শহরকে একজন বিদেশির কাছে বর্ণনা করুন।",
+    "এই বছর কোন দক্ষতা শিখতে চান এবং কেন?",
+    "লম্বা ডিউটির মাঝে কীভাবে সুস্থ থাকবেন?",
+    "একজন ছাত্রকে বোঝান ফিজিওলজি কেন মজার বিষয়।",
+    "কাজে গর্ব অনুভব করেছেন এমন একটি মুহূর্তের কথা বলুন।",
+    "বাংলাদেশে রাস্তার যানজট কমাতে কী করা যায়?",
+    "আপনার প্রিয় খাবার এবং তার সাথে জড়িত কোনো স্মৃতি।"
+  ]
+};
+const FILLERS = {
+  en: ["um","umm","uh","uhh","er","erm","ah","hmm","like","actually","basically","literally","you know","i mean","kind of","sort of","okay so","right"],
+  bn: ["মানে","আসলে","ইয়ে","এই যে","আচ্ছা","বুঝছেন","বুঝলেন","ধরেন","তো","হুম","উম","আঁ"]
+};
+const STOP = {
+  en: new Set("the a an and or but so to of in on at for with is are was were be been it this that i you he she we they my your our their me him her them as by from not do does did have has had will would can could should there here what which who when where why how if then than about into just also very".split(" ")),
+  bn: new Set("এবং ও আর কিন্তু যে এই সেই এটা ওটা আমি আমরা তুমি আপনি সে তারা আমার আপনার তার করে করা হয় হয়ে ছিল আছে না কি কী জন্য থেকে দিয়ে একটা একটি এক যদি তাহলে খুব".split(" "))
+};
+
+// ---------- STATE ----------
+let lang = "en", topic = "", history = [];
+try { history = JSON.parse(localStorage.getItem("sc_history") || "[]"); } catch(e) {}
+const $ = id => document.getElementById(id);
+
+// ---------- TOPICS ----------
+function dailyPick(list){
+  const d = new Date(); let seed = d.getFullYear()*1000 + (d.getMonth()+1)*40 + d.getDate();
+  const rnd = () => (seed = (seed*9301+49297)%233280)/233280;
+  const idx = [...list.keys()].sort(()=>rnd()-0.5);
+  return idx.slice(0,3).map(i=>list[i]);
+}
+function renderTopics(){
+  $("topics").innerHTML = "";
+  dailyPick(TOPICS[lang]).forEach(t=>{
+    const b = document.createElement("button"); b.className="topic"; b.textContent=t;
+    b.onclick = ()=>chooseTopic(t,b); $("topics").appendChild(b);
+  });
+}
+function chooseTopic(t,btn){
+  document.querySelectorAll(".topic").forEach(x=>x.classList.remove("on"));
+  if(btn) btn.classList.add("on");
+  topic = t; $("chosenTopic").textContent = t ? "Topic: " + t : "Choose a topic above.";
+  $("recBtn").disabled = !t || !supported;
+}
+$("ownBtn").onclick = ()=>{ $("ownInput").classList.remove("hide"); $("ownInput").focus(); chooseTopic($("ownInput").value.trim(), $("ownBtn")); };
+$("ownInput").oninput = e => chooseTopic(e.target.value.trim(), $("ownBtn"));
+document.querySelectorAll("#langSeg button").forEach(b=>b.onclick=()=>{
+  if(recording) return;
+  document.querySelectorAll("#langSeg button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); lang=b.dataset.l; renderTopics(); chooseTopic("");
+  $("ownInput").classList.add("hide"); $("ownInput").value="";
+});
+
+// ---------- SUPPORT CHECK ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const supported = !!(SR && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+if(!supported){
+  $("support").classList.remove("hide");
+  $("support").textContent = "This browser can't turn speech into text. Please open this page in Google Chrome (laptop or Android) or Safari (iPhone).";
+}
+
+// ---------- RECORDING ----------
+const DURATION = 60, FRAME_MS = 50;
+let recording=false, rec=null, stream=null, ctx=null, analyser=null, tick=null, startT=0;
+let finalText="", interimText="", frames=[];
+
+async function start(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){ alert2("Microphone permission was blocked. Please allow the microphone and try again."); return; }
+  ctx = new (window.AudioContext||window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream);
+  analyser = ctx.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+  frames=[]; finalText=""; interimText="";
+  recording = true; startT = performance.now();
+  $("recBtn").textContent="Stop"; $("recBtn").classList.add("stop");
+  $("resCard").classList.add("hide"); $("live").textContent="Listening…";
+  startRecognition();
+  const buf = new Float32Array(analyser.fftSize);
+  tick = setInterval(()=>{
+    analyser.getFloatTimeDomainData(buf);
+    let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i];
+    const rms = Math.sqrt(s/buf.length);
+    frames.push({rms, pitch: rms>0.01 ? pitchOf(buf, ctx.sampleRate) : 0});
+    $("lvl").style.width = Math.min(100, rms*600)+"%";
+    const left = Math.max(0, DURATION - (performance.now()-startT)/1000);
+    $("timer").textContent = "0:" + String(Math.ceil(left)).padStart(2,"0");
+    if(left<=0) stop();
+  }, FRAME_MS);
+}
+const isAndroid = /Android/i.test(navigator.userAgent);
+function startRecognition(){
+  rec = new SR(); rec.lang = lang==="en" ? "en-US" : "bn-BD";
+  rec.continuous = !isAndroid; rec.interimResults = true;
+  rec.onresult = ev=>{
+    interimText="";
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      const t = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) finalText += " " + t; else interimText += t;
+    }
+    $("live").textContent = (finalText+" "+interimText).trim();
+  };
+  rec.onerror = e=>{ if(e.error==="not-allowed") alert2("Speech recognition was blocked. Allow the microphone and try again."); };
+  rec.onend = ()=>{ if(recording){ try{ rec.start(); }catch(e){} } };
+  try{ rec.start(); }catch(e){}
+}
+function stop(){
+  if(!recording) return;
+  recording=false; clearInterval(tick);
+  const secs = Math.min(DURATION, (performance.now()-startT)/1000);
+  $("recBtn").textContent="Analysing…"; $("recBtn").disabled=true; $("recBtn").classList.remove("stop");
+  try{ rec.stop(); }catch(e){}
+  stream.getTracks().forEach(t=>t.stop()); try{ ctx.close(); }catch(e){}
+  $("lvl").style.width="0";
+  setTimeout(()=>{   // wait for last words to arrive
+    const text = (finalText + " " + interimText).trim();
+    analyse(text, secs);
+    $("recBtn").textContent="Start speaking"; $("recBtn").disabled=false; $("timer").textContent="1:00";
+  }, 1200);
+}
+$("recBtn").onclick = ()=> recording ? stop() : start();
+$("againBtn").onclick = ()=>{ $("resCard").classList.add("hide"); window.scrollTo({top:$("recCard").offsetTop-10,behavior:"smooth"}); };
+function alert2(msg){ $("live").textContent = "⚠️ " + msg; }
+
+// pitch by autocorrelation (70–400 Hz)
+function pitchOf(buf, sr){
+  const minLag = Math.floor(sr/400), maxLag = Math.floor(sr/70);
+  let best=0, bestLag=0;
+  for(let lag=minLag; lag<=maxLag; lag++){
+    let c=0; for(let i=0;i<buf.length-lag;i+=2) c+=buf[i]*buf[i+lag];
+    if(c>best){best=c;bestLag=lag;}
+  }
+  let e=0; for(let i=0;i<buf.length;i+=2) e+=buf[i]*buf[i];
+  return (bestLag && best/e>0.3) ? sr/bestLag : 0;
+}
+
+// ---------- ANALYSIS ----------
+const pct=(a,p)=>{ const s=[...a].sort((x,y)=>x-y); return s.length? s[Math.floor((s.length-1)*p)] : 0; };
+const mean=a=>a.reduce((x,y)=>x+y,0)/(a.length||1);
+const sd=a=>{ const m=mean(a); return Math.sqrt(mean(a.map(x=>(x-m)**2))); };
+const db=x=>20*Math.log10(Math.max(x,1e-6));
+
+function analyse(text, secs){
+  // --- voice activity from loudness ---
+  const r = frames.map(f=>f.rms);
+  const noise=pct(r,.1), peak=pct(r,.9), th = noise + 0.25*(peak-noise);
+  const voiced = r.map(x=>x>th);
+  // smooth: fill 1-frame gaps
+  for(let i=1;i<voiced.length-1;i++) if(!voiced[i]&&voiced[i-1]&&voiced[i+1]) voiced[i]=true;
+  const segs=[]; let s=-1;
+  voiced.forEach((v,i)=>{ if(v&&s<0) s=i; if(!v&&s>=0){segs.push([s,i]); s=-1;} });
+  if(s>=0) segs.push([s,voiced.length]);
+  const gaps=[]; for(let i=1;i<segs.length;i++) gaps.push((segs[i][0]-segs[i-1][1])*FRAME_MS/1000);
+  const pauses = gaps.filter(g=>g>=0.5);
+  const natural = pauses.filter(g=>g<2).length, long = pauses.filter(g=>g>=2).length;
+  const speakSecs = voiced.filter(Boolean).length*FRAME_MS/1000;
+
+  // --- trailing off: end of each phrase quieter than its middle ---
+  const drops=[];
+  segs.forEach(([a,b])=>{ if((b-a)*FRAME_MS>=1200){
+    const body=r.slice(a,b-6).map(db), tail=r.slice(b-6,b).map(db);
+    drops.push(mean(body)-mean(tail));
+  }});
+  const trail = drops.length ? mean(drops) : 0;
+
+  // --- loudness steadiness & pitch variety ---
+  const vdb = r.filter((x,i)=>voiced[i]).map(db);
+  const loudSD = vdb.length? sd(vdb) : 0;
+  const pitches = frames.map(f=>f.pitch).filter((p,i)=>p&&voiced[i]);
+  const med = pct(pitches,.5)||1;
+  const semis = pitches.map(p=>12*Math.log2(p/med)).filter(x=>Math.abs(x)<12);
+  const pitchVar = semis.length>10 ? sd(semis) : null;
+
+  // --- words ---
+  const clean = text.toLowerCase().replace(/[.,!?;:"'()।]/g," ").replace(/\s+/g," ").trim();
+  const words = clean ? clean.split(" ") : [];
+  const wpm = Math.round(words.length / (secs/60));
+  const padded = " "+clean+" ";
+  const fillerHits = {};
+  FILLERS[lang].forEach(f=>{ const n = padded.split(" "+f+" ").length-1; if(n) fillerHits[f]=n; });
+  const fillerCount = Object.values(fillerHits).reduce((a,b)=>a+b,0);
+  const freq={}; words.forEach(w=>{ if(w.length>2 && !STOP[lang].has(w)) freq[w]=(freq[w]||0)+1; });
+  const repeats = Object.entries(freq).filter(([w,n])=>n>=4).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const variety = words.length ? new Set(words).size/words.length : 0;
+  const pausesPerMin = pauses.length/(secs/60);
+
+  // --- score each metric 0-100 ---
+  const band=(v,lo,hi,soft)=> v>=lo&&v<=hi ? 100 : Math.max(0, 100 - (v<lo? lo-v : v-hi)/soft*100);
+  const M = [
+    {k:"Speed", v: wpm+" wpm", s: words.length? band(wpm,120,160,60):0, note:"Aim 120–160 for teaching"},
+    {k:"Pauses", v: natural+" natural · "+long+" long", s: Math.round((band(pausesPerMin,6,15,10)+ Math.max(0,100-long*25))/2), note:"Short pauses after each idea"},
+    {k:"Filler words", v: fillerCount + (fillerCount?" ("+Object.entries(fillerHits).map(([f,n])=>f+"×"+n).join(", ")+")":""), s: Math.max(0,100-fillerCount*12), note:"Aim for 0–2 per minute"},
+    {k:"Voice variety", v: pitchVar===null?"not enough voice":pitchVar.toFixed(1)+" semitones", s: pitchVar===null?50:band(pitchVar,2,6,2.5), note:"Below 2 sounds flat"},
+    {k:"Sentence endings", v: trail>0?"drops "+trail.toFixed(0)+" dB":"steady", s: band(trail,-99,4,6), note:"Keep volume to the last word"},
+    {k:"Volume steadiness", v: loudSD.toFixed(1)+" dB spread", s: band(loudSD,0,7,6), note:"Even, confident volume"},
+    {k:"Word variety", v: Math.round(variety*100)+"% unique"+(repeats.length?" · repeats: "+repeats.map(([w,n])=>w+"×"+n).join(", "):""), s: words.length? band(variety*100,55,100,30):0, note:"Avoid repeating the same words"},
+    {k:"Speaking time", v: Math.round(speakSecs)+" of "+Math.round(secs)+" s", s: band(speakSecs/secs*100,55,85,30), note:"Too low = hesitating"}
+  ];
+  M.forEach(m=>m.s=Math.round(m.s));
+  const overall = Math.round(mean(M.map(m=>m.s)));
+
+  // --- tips (3 weakest) ---
+  const TIP = {
+    "Speed": wpm>160 ? "You spoke fast ("+wpm+" wpm). In class, slow down: after every key point, stop and count 'one' silently before moving on." :
+             "You spoke slowly ("+wpm+" wpm). Prepare 3 points in your head before you start so the words flow; aim for about 130 wpm.",
+    "Pauses": long>0 ? "You had "+long+" long silence(s) over 2 seconds. When you lose your thread, bridge with a short summary ('So, the main point is…') instead of going silent." :
+              "Use more deliberate pauses. A 1-second pause after an important fact lets students write it down and makes you sound confident.",
+    "Filler words": "You used "+fillerCount+" filler word(s). Replace each filler with a silent pause — silence sounds more confident than 'um' or 'actually'.",
+    "Voice variety": "Your voice sounded fairly flat. Lift your pitch on key words and questions, and drop it at the end of statements — like telling a story.",
+    "Sentence endings": "Your volume drops at the end of sentences. Push air through the last word; students at the back miss the most important part.",
+    "Volume steadiness": "Your loudness jumped up and down. Sit or stand upright and speak from the chest at one comfortable, steady level.",
+    "Word variety": "You repeated some words often"+(repeats.length?" ("+repeats.map(r=>r[0]).join(", ")+")":"")+". Try a synonym or a short example instead.",
+    "Speaking time": "You were silent for much of the minute. Use a simple structure: point → reason → example → conclusion. It keeps you talking smoothly."
+  };
+  const weak = [...M].filter(m=>m.s<85).sort((a,b)=>a.s-b.s).slice(0,3);
+  const tips = weak.length ? weak.map(m=>TIP[m.k]) : ["Excellent minute! Tomorrow, challenge yourself with a harder topic or try the other language."];
+  if(!words.length) tips.unshift("I couldn't catch any words. Check that the microphone is allowed and speak a little closer to the device.");
+
+  // --- render ---
+  const cls = s=> s>=80?"g":s>=55?"o":"b", lab = s=> s>=80?"Good":s>=55?"Okay":"Work on";
+  $("ring").textContent=overall; $("ring").className="ring "+cls(overall);
+  $("verdict").textContent = overall>=80?"Great session!":overall>=55?"Good effort — a few things to polish":"Keep practising — focus on the tips below";
+  $("resTopic").textContent = topic;
+  $("metrics").innerHTML = M.map(m=>`<div class="m"><div class="k">${m.k}</div><div class="v">${m.v}</div><span class="tag ${cls(m.s)}">${lab(m.s)}</span> <span class="sub">${m.note}</span></div>`).join("");
+  $("tips").innerHTML = tips.map(t=>`<li>${t}</li>`).join("");
+  $("transcript").textContent = text || "(nothing recognised)";
+  $("resCard").classList.remove("hide");
+  window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
+
+  // --- save ---
+  const entry = {date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long,
+                 metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text};
+  history.unshift(entry); history = history.slice(0,200);
+  try{ localStorage.setItem("sc_history", JSON.stringify(history)); }catch(e){}
+  lastReport = makeReport(entry, tips);
+  renderHistory();
+}
+
+let lastReport="";
+function makeReport(e,tips){
+  return `Speech Coach report — ${new Date(e.date).toLocaleString()}\nLanguage: ${e.lang==="en"?"English":"Bangla"}\nTopic: ${e.topic}\nOverall: ${e.overall}/100\n`+
+    e.metrics.map(m=>`- ${m.k}: ${m.v} (${m.s}/100)`).join("\n")+
+    `\n\nTranscript:\n${e.transcript}\n\nPlease give me deeper feedback on my clarity, structure and word choice.`;
+}
+$("copyBtn").onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(lastReport); $("copyMsg").textContent="Copied! Paste it into Claude."; }
+  catch(e){ $("copyMsg").textContent="Copy failed — select the transcript manually."; }
+};
+
+function renderHistory(){
+  if(!history.length) return;
+  $("history").innerHTML = `<table><tr><th>Date</th><th>Lang</th><th>Score</th><th>WPM</th><th>Fillers</th><th>Long pauses</th></tr>`+
+    history.slice(0,10).map(h=>`<tr><td>${new Date(h.date).toLocaleDateString()}</td><td>${h.lang.toUpperCase()}</td><td><b>${h.overall}</b></td><td>${h.wpm}</td><td>${h.fillers}</td><td>${h.longPauses}</td></tr>`).join("")+`</table>`;
+}
+
+renderTopics(); renderHistory();
+</script>
+</body>
+</html>
