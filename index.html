@@ -45,6 +45,8 @@
   .hide{display:none}
   .warn{background:#fff6e5;border:1px solid #f3d9a4;border-radius:10px;padding:10px;font-size:14px}
   details{font-size:14px}
+  svg.ch{width:100%;height:120px;display:block}
+  .empty{color:var(--muted);font-size:13px;padding:10px 0}
 </style>
 </head>
 <body>
@@ -92,10 +94,32 @@
     <div class="sub" id="copyMsg"></div>
   </div>
 
+  <!-- PROGRESS -->
+  <div class="card">
+    <h2>📈 Your progress</h2>
+    <div class="grid" id="stats"></div>
+    <div id="weekly" class="sub" style="margin:12px 0"></div>
+    <div class="k sub">Overall score</div><div id="chartScore"></div>
+    <div class="k sub" style="margin-top:10px">Speed (wpm) — green band = ideal 120–160</div><div id="chartWpm"></div>
+    <div class="k sub" style="margin-top:10px">Filler words per session</div><div id="chartFill"></div>
+  </div>
+
   <!-- HISTORY -->
   <div class="card">
     <h2>Recent sessions</h2>
     <div id="history" class="sub">No sessions yet.</div>
+  </div>
+
+  <!-- SYNC -->
+  <div class="card">
+    <details id="syncBox">
+      <summary><b>☁️ Sync across devices</b> <span class="sub" id="syncState">(off)</span></summary>
+      <p class="sub">Saves your sessions to your own Google Sheet so laptop and phone share one history. Set up once on each device.</p>
+      <input type="text" id="syncUrl" placeholder="Web app URL (https://script.google.com/...)" style="margin-bottom:8px">
+      <input type="text" id="syncKey" placeholder="Sync key">
+      <div class="row"><button class="btn" id="syncSave">Save &amp; sync now</button><button class="btn" id="syncOff">Turn off</button></div>
+      <div class="sub" id="syncMsg" style="margin-top:8px"></div>
+    </details>
   </div>
 </div>
 
@@ -387,12 +411,109 @@ function analyse(text, secs){
   window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
 
   // --- save ---
-  const entry = {date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long,
+  const entry = {id:newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long,
                  metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text};
   history.unshift(entry); history = history.slice(0,200);
-  try{ localStorage.setItem("sc_history", JSON.stringify(history)); }catch(e){}
+  saveLocal();
   lastReport = makeReport(entry, tips);
   renderHistory();
+  pushEntry(entry);
+}
+
+// ---------- STORAGE & SYNC ----------
+function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function saveLocal(){ try{ localStorage.setItem("sc_history", JSON.stringify(history)); }catch(e){} }
+history.forEach(h=>{ if(!h.id) h.id = "old-" + h.date; });   // older sessions get an id
+let sync = {}; try{ sync = JSON.parse(localStorage.getItem("sc_sync")||"{}"); }catch(e){}
+const syncOn = ()=> !!(sync.url && sync.key);
+
+async function pushEntry(e){
+  if(!syncOn()) return false;
+  try{
+    const r = await fetch(sync.url, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                                     body: JSON.stringify({key:sync.key, entry:e})});
+    const j = await r.json(); return j.ok;
+  }catch(err){ return false; }
+}
+async function syncAll(){
+  if(!syncOn()) return;
+  $("syncMsg").textContent = "Syncing…";
+  try{
+    const r = await fetch(sync.url + "?key=" + encodeURIComponent(sync.key));
+    const j = await r.json();
+    if(!j.ok){ $("syncMsg").textContent = "⚠️ " + (j.error==="wrong key" ? "Wrong sync key." : "Sync failed."); return; }
+    const remote = new Map(j.rows.map(x=>[String(x.id), x]));
+    const local = new Map(history.map(x=>[String(x.id), x]));
+    let up = 0;
+    for(const [id, x] of local){ if(!remote.has(id)){ if(await pushEntry(x)) up++; } }
+    for(const [id, x] of remote){ if(!local.has(id)) local.set(id, x); }
+    history = [...local.values()].sort((a,b)=> new Date(b.date) - new Date(a.date)).slice(0,500);
+    saveLocal(); renderHistory();
+    $("syncMsg").textContent = `✅ Synced — ${history.length} sessions in total (${up} uploaded).`;
+    $("syncState").textContent = "(on)";
+  }catch(err){
+    $("syncMsg").textContent = "⚠️ Couldn't reach your Google Sheet. Check the URL and your internet.";
+  }
+}
+$("syncUrl").value = sync.url || ""; $("syncKey").value = sync.key || "";
+$("syncState").textContent = syncOn() ? "(on)" : "(off)";
+$("syncSave").onclick = ()=>{
+  sync = {url:$("syncUrl").value.trim(), key:$("syncKey").value.trim()};
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(sync.url) || !sync.key){
+    $("syncMsg").textContent = "Please paste the full web app URL and your sync key."; return; }
+  try{ localStorage.setItem("sc_sync", JSON.stringify(sync)); }catch(e){}
+  syncAll();
+};
+$("syncOff").onclick = ()=>{
+  sync = {}; try{ localStorage.removeItem("sc_sync"); }catch(e){}
+  $("syncUrl").value = $("syncKey").value = ""; $("syncState").textContent = "(off)";
+  $("syncMsg").textContent = "Sync turned off. Your sessions stay on this device and in your Google Sheet.";
+};
+
+// ---------- PROGRESS ----------
+function dayKey(d){ const x = new Date(d); return x.getFullYear()+"-"+(x.getMonth()+1)+"-"+x.getDate(); }
+function svgLine(vals, lo, hi, band, color){
+  if(vals.length < 2) return `<div class="empty">The chart appears after 2 sessions.</div>`;
+  const W=600, H=120, P=24, n=vals.length;
+  const x = i => P + i*(W-2*P)/(n-1), y = v => H-P - (Math.min(Math.max(v,lo),hi)-lo)/(hi-lo)*(H-2*P);
+  let s = `<svg class="ch" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  if(band) s += `<rect x="${P}" y="${y(band[1])}" width="${W-2*P}" height="${y(band[0])-y(band[1])}" fill="#1f9d55" opacity=".12"/>`;
+  s += `<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#e4e7ef"/>`;
+  s += `<text x="2" y="${y(hi)+4}" font-size="11" fill="#6b7385">${hi}</text><text x="2" y="${H-P+4}" font-size="11" fill="#6b7385">${lo}</text>`;
+  s += `<polyline fill="none" stroke="${color}" stroke-width="2.5" points="${vals.map((v,i)=>x(i)+","+y(v)).join(" ")}"/>`;
+  vals.forEach((v,i)=> s += `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${color}"><title>${v}</title></circle>`);
+  return s + `</svg>`;
+}
+function renderProgress(){
+  const asc = [...history].sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const last = asc.slice(-30);
+  // streak: consecutive days up to today (or yesterday)
+  const days = new Set(asc.map(h=>dayKey(h.date)));
+  let streak = 0, d = new Date();
+  if(!days.has(dayKey(d))) d.setDate(d.getDate()-1);
+  while(days.has(dayKey(d))){ streak++; d.setDate(d.getDate()-1); }
+  const now = Date.now(), wk = 7*864e5;
+  const avg = a => a.length ? Math.round(mean(a)) : null;
+  const thisW = avg(asc.filter(h=> now-new Date(h.date) < wk).map(h=>h.overall));
+  const lastW = avg(asc.filter(h=> now-new Date(h.date) >= wk && now-new Date(h.date) < 2*wk).map(h=>h.overall));
+  const best = asc.length ? Math.max(...asc.map(h=>h.overall)) : 0;
+  $("stats").innerHTML = [
+    ["🔥 Streak", streak + (streak===1?" day":" days")],
+    ["Sessions", asc.length],
+    ["This week avg", thisW ?? "–"],
+    ["Best score", asc.length ? best : "–"]
+  ].map(([k,v])=>`<div class="m"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  let w = "";
+  if(thisW!==null && lastW!==null){
+    const diff = thisW-lastW;
+    w = diff>0 ? `📊 This week you're up ${diff} points on last week — keep it going!` :
+        diff<0 ? `📊 This week is ${-diff} points below last week. One focused session a day will bring it back.` :
+                 `📊 Same average as last week. Pick your weakest measure and focus on it tomorrow.`;
+  } else if(thisW!==null) w = `📊 This week's average: ${thisW}. Next week you'll see a comparison.`;
+  $("weekly").textContent = w;
+  $("chartScore").innerHTML = svgLine(last.map(h=>h.overall), 0, 100, null, "#2f6fed");
+  $("chartWpm").innerHTML = svgLine(last.map(h=>h.wpm), 60, 220, [120,160], "#d48a00");
+  $("chartFill").innerHTML = svgLine(last.map(h=>h.fillers), 0, Math.max(10, ...last.map(h=>h.fillers)), null, "#d64545");
 }
 
 let lastReport="";
@@ -407,12 +528,13 @@ $("copyBtn").onclick = async ()=>{
 };
 
 function renderHistory(){
+  renderProgress();
   if(!history.length) return;
   $("history").innerHTML = `<table><tr><th>Date</th><th>Lang</th><th>Score</th><th>WPM</th><th>Fillers</th><th>Long pauses</th></tr>`+
     history.slice(0,10).map(h=>`<tr><td>${new Date(h.date).toLocaleDateString()}</td><td>${h.lang.toUpperCase()}</td><td><b>${h.overall}</b></td><td>${h.wpm}</td><td>${h.fillers}</td><td>${h.longPauses}</td></tr>`).join("")+`</table>`;
 }
 
-renderTopics(); renderHistory();
+renderTopics(); renderHistory(); syncAll();
 </script>
 </body>
 </html>
