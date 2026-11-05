@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Speech Coach</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f6fed">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Hind+Siliguri:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -75,6 +79,7 @@
     <div class="timer" id="timer">1:00</div>
     <div class="meter"><i id="lvl"></i></div>
     <div style="height:12px"></div>
+    <label id="listenWrap" class="sub hide" style="display:block;margin-bottom:10px"><input type="checkbox" id="listenOnly"> 🎧 Practice &amp; listen mode — record my voice to play back (this minute won't be scored)</label>
     <button class="big" id="recBtn" disabled>Start speaking</button>
     <div class="live" id="live"></div>
   </div>
@@ -84,6 +89,7 @@
     <h2>3. Your score card</h2>
     <div class="overall"><div class="ring" id="ring">–</div><div><b id="verdict"></b><div class="sub" id="resTopic"></div></div></div>
     <div class="grid" id="metrics"></div>
+    <div id="player" style="margin-top:12px"></div>
     <h2 style="margin-top:16px">Coach's tips for tomorrow</h2>
     <ol class="tips" id="tips"></ol>
     <details><summary>What I heard (transcript)</summary><p id="transcript"></p></details>
@@ -244,34 +250,44 @@ if(!supported){
 
 // ---------- RECORDING ----------
 const DURATION = 60, FRAME_MS = 50;
+const isAndroid = /Android/i.test(navigator.userAgent);
+const PHONE_MODE = isAndroid;   // Android can't share the mic between recording and word recognition
+if(PHONE_MODE) document.getElementById("listenWrap").classList.remove("hide");
+let listenOnly=false;
 let recording=false, rec=null, stream=null, ctx=null, analyser=null, tick=null, startT=0;
-let finalText="", interimText="", frames=[];
+let finalText="", interimText="", frames=[], recErr="", speechMarks=[], mediaRec=null, chunks=[], audioURL=null;
 
 async function start(){
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({audio:true});
-  }catch(e){ alert2("Microphone permission was blocked. Please allow the microphone and try again."); return; }
-  ctx = new (window.AudioContext||window.webkitAudioContext)();
-  const src = ctx.createMediaStreamSource(stream);
-  analyser = ctx.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
-  frames=[]; finalText=""; interimText="";
+  frames=[]; finalText=""; interimText=""; recErr=""; speechMarks=[]; chunks=[];
+  if(audioURL){ URL.revokeObjectURL(audioURL); audioURL=null; }
+  listenOnly = PHONE_MODE && $("listenOnly").checked;
+  const useAudio = !PHONE_MODE || listenOnly;
+  if(useAudio){
+    try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ alert2("Microphone permission was blocked. Please allow the microphone and try again."); return; }
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+    try{ mediaRec = new MediaRecorder(stream); mediaRec.ondataavailable = e=>chunks.push(e.data); mediaRec.start(); }catch(e){ mediaRec=null; }
+  }
   recording = true; startT = performance.now();
   $("recBtn").textContent="Stop"; $("recBtn").classList.add("stop");
-  $("resCard").classList.add("hide"); $("live").textContent="Listening…";
-  startRecognition();
-  const buf = new Float32Array(analyser.fftSize);
+  $("resCard").classList.add("hide"); $("live").textContent="Listening… start speaking.";
+  if(!listenOnly) startRecognition(); else $("live").textContent="🎧 Recording… speak now.";
+  const buf = new Float32Array(2048);
   tick = setInterval(()=>{
-    analyser.getFloatTimeDomainData(buf);
-    let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i];
-    const rms = Math.sqrt(s/buf.length);
-    frames.push({rms, pitch: rms>0.01 ? pitchOf(buf, ctx.sampleRate) : 0});
-    $("lvl").style.width = Math.min(100, rms*600)+"%";
+    if(analyser && ctx){
+      analyser.getFloatTimeDomainData(buf);
+      let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i];
+      const rms = Math.sqrt(s/buf.length);
+      frames.push({rms, pitch: rms>0.01 ? pitchOf(buf, ctx.sampleRate) : 0});
+      $("lvl").style.width = Math.min(100, rms*600)+"%";
+    }
     const left = Math.max(0, DURATION - (performance.now()-startT)/1000);
     $("timer").textContent = "0:" + String(Math.ceil(left)).padStart(2,"0");
     if(left<=0) stop();
   }, FRAME_MS);
 }
-const isAndroid = /Android/i.test(navigator.userAgent);
 function startRecognition(){
   rec = new SR(); rec.lang = lang==="en" ? "en-US" : "bn-BD";
   rec.continuous = !isAndroid; rec.interimResults = true;
@@ -282,10 +298,20 @@ function startRecognition(){
       if(ev.results[i].isFinal) finalText += " " + t; else interimText += t;
     }
     $("live").textContent = (finalText+" "+interimText).trim();
+    if(PHONE_MODE) $("lvl").style.width = "100%";
   };
-  rec.onerror = e=>{ if(e.error==="not-allowed") alert2("Speech recognition was blocked. Allow the microphone and try again."); };
-  rec.onend = ()=>{ if(recording){ try{ rec.start(); }catch(e){} } };
-  try{ rec.start(); }catch(e){}
+  rec.onspeechstart = ()=> speechMarks.push(["s", performance.now()]);
+  rec.onspeechend   = ()=> speechMarks.push(["e", performance.now()]);
+  rec.onerror = e=>{
+    if(e.error==="no-speech" || e.error==="aborted") return;
+    recErr = e.error;
+    if(e.error==="not-allowed") alert2("Microphone is blocked for this site. Tap the 🔒 next to the address → Permissions → Microphone → Allow.");
+    else if(e.error==="network") alert2("Word recognition needs internet. Check your connection.");
+    else if(e.error==="audio-capture") alert2("Another app is using the microphone. Close it and try again.");
+    else if(e.error==="language-not-supported") alert2("This language isn't available on this device's speech service.");
+  };
+  rec.onend = ()=>{ if(PHONE_MODE) $("lvl").style.width="0"; if(recording){ try{ rec.start(); }catch(e){} } };
+  try{ rec.start(); }catch(e){ recErr = "start-failed"; }
 }
 function stop(){
   if(!recording) return;
@@ -293,13 +319,33 @@ function stop(){
   const secs = Math.min(DURATION, (performance.now()-startT)/1000);
   $("recBtn").textContent="Analysing…"; $("recBtn").disabled=true; $("recBtn").classList.remove("stop");
   try{ rec.stop(); }catch(e){}
-  stream.getTracks().forEach(t=>t.stop()); try{ ctx.close(); }catch(e){}
+  if(mediaRec && mediaRec.state!=="inactive"){
+    mediaRec.onstop = ()=>{ audioURL = URL.createObjectURL(new Blob(chunks, {type: mediaRec.mimeType || "audio/webm"})); showPlayer(); };
+    mediaRec.stop();
+  }
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  if(ctx) try{ ctx.close(); }catch(e){}
+  stream=null; ctx=null; analyser=null;
   $("lvl").style.width="0";
   setTimeout(()=>{   // wait for last words to arrive
     const text = (finalText + " " + interimText).trim();
-    analyse(text, secs);
+    if(listenOnly){
+      $("ring").textContent="🎧"; $("ring").className="ring g";
+      $("verdict").textContent="Practice recording — listen back below";
+      $("resTopic").textContent = topic; $("metrics").innerHTML="";
+      $("tips").innerHTML="<li>Listen for: speed, long silences, 'um/actually', and whether your voice drops at the end of sentences.</li><li>Untick Practice &amp; listen mode to get your score.</li>";
+      $("transcript").textContent="(not transcribed in listen mode)";
+      $("resCard").classList.remove("hide"); window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
+    } else analyse(text, secs);
+    showPlayer();
     $("recBtn").textContent="Start speaking"; $("recBtn").disabled=false; $("timer").textContent="1:00";
   }, 1200);
+}
+function showPlayer(){
+  const box = $("player");
+  if(audioURL){ box.innerHTML = `<audio controls src="${audioURL}" style="width:100%"></audio><div class="sub">Only kept until you close this page — never saved or uploaded.</div>`; }
+  else if(PHONE_MODE && !listenOnly){ box.innerHTML = `<div class="sub">▶️ Want to hear yourself? Tick <b>🎧 Practice &amp; listen mode</b> above the Start button. (On phones the microphone can do only one job at a time.)</div>`; }
+  else box.innerHTML = "";
 }
 $("recBtn").onclick = ()=> recording ? stop() : start();
 $("againBtn").onclick = ()=>{ $("resCard").classList.add("hide"); window.scrollTo({top:$("recCard").offsetTop-10,behavior:"smooth"}); };
@@ -336,7 +382,18 @@ function analyse(text, secs){
   const gaps=[]; for(let i=1;i<segs.length;i++) gaps.push((segs[i][0]-segs[i-1][1])*FRAME_MS/1000);
   const pauses = gaps.filter(g=>g>=0.5);
   const natural = pauses.filter(g=>g<2).length, long = pauses.filter(g=>g>=2).length;
-  const speakSecs = voiced.filter(Boolean).length*FRAME_MS/1000;
+  let speakSecs = voiced.filter(Boolean).length*FRAME_MS/1000;
+  let natural2=natural, long2=long, pauseCount=pauses.length, timingKnown = frames.length>0;
+  if(PHONE_MODE){
+    // estimate from the speech service's start/end signals (includes ~0.5 s restart delay)
+    const segs2=[]; let st=null;
+    speechMarks.forEach(([t,ms])=>{ if(t==="s") st=ms; else if(st!==null){ segs2.push([st,ms]); st=null; } });
+    if(st!==null) segs2.push([st, startT+secs*1000]);
+    const g2=[]; for(let i=1;i<segs2.length;i++) g2.push((segs2[i][0]-segs2[i-1][1])/1000);
+    const p2=g2.filter(g=>g>=1); natural2=p2.filter(g=>g<2.5).length; long2=p2.filter(g=>g>=2.5).length; pauseCount=p2.length;
+    speakSecs = segs2.reduce((a,[x,y])=>a+(y-x)/1000,0);
+    timingKnown = segs2.length>0;
+  }
 
   // --- trailing off: end of each phrase quieter than its middle ---
   const drops=[];
@@ -365,20 +422,33 @@ function analyse(text, secs){
   const freq={}; words.forEach(w=>{ if(w.length>2 && !STOP[lang].has(w)) freq[w]=(freq[w]||0)+1; });
   const repeats = Object.entries(freq).filter(([w,n])=>n>=4).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const variety = words.length ? new Set(words).size/words.length : 0;
-  const pausesPerMin = pauses.length/(secs/60);
+  const pausesPerMin = pauseCount/(secs/60);
+
+  if(!words.length){
+    $("ring").textContent="–"; $("ring").className="ring b";
+    $("verdict").textContent="I couldn't hear any words";
+    $("resTopic").textContent = topic;
+    $("metrics").innerHTML="";
+    $("tips").innerHTML = `<li>Check the microphone is allowed for this site (tap the 🔒 next to the address → Permissions → Microphone).</li><li>Make sure you have internet — word recognition uses it.</li><li>Speak 20–30 cm from the phone in a quiet place.</li>`
+      + (recErr? `<li class="sub">Technical code to send Claude: ${recErr}</li>`:"");
+    $("transcript").textContent="(nothing recognised)";
+    $("resCard").classList.remove("hide");
+    window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
+    return;   // not saved
+  }
 
   // --- score each metric 0-100 ---
   const band=(v,lo,hi,soft)=> v>=lo&&v<=hi ? 100 : Math.max(0, 100 - (v<lo? lo-v : v-hi)/soft*100);
   const M = [
     {k:"Speed", v: wpm+" wpm", s: words.length? band(wpm,120,160,60):0, note:"Aim 120–160 for teaching"},
-    {k:"Pauses", v: natural+" natural · "+long+" long", s: Math.round((band(pausesPerMin,6,15,10)+ Math.max(0,100-long*25))/2), note:"Short pauses after each idea"},
+    timingKnown && {k:"Pauses", v: natural2+" natural · "+long2+" long", s: Math.round((band(pausesPerMin,PHONE_MODE?4:6,15,10)+ Math.max(0,100-long2*25))/2), note:"Short pauses after each idea"},
     {k:"Filler words", v: fillerCount + (fillerCount?" ("+Object.entries(fillerHits).map(([f,n])=>f+"×"+n).join(", ")+")":""), s: Math.max(0,100-fillerCount*12), note:"Aim for 0–2 per minute"},
-    {k:"Voice variety", v: pitchVar===null?"not enough voice":pitchVar.toFixed(1)+" semitones", s: pitchVar===null?50:band(pitchVar,2,6,2.5), note:"Below 2 sounds flat"},
-    {k:"Sentence endings", v: trail>0?"drops "+trail.toFixed(0)+" dB":"steady", s: band(trail,-99,4,6), note:"Keep volume to the last word"},
-    {k:"Volume steadiness", v: loudSD.toFixed(1)+" dB spread", s: band(loudSD,0,7,6), note:"Even, confident volume"},
+    !PHONE_MODE && {k:"Voice variety", v: pitchVar===null?"not enough voice":pitchVar.toFixed(1)+" semitones", s: pitchVar===null?50:band(pitchVar,2,6,2.5), note:"Below 2 sounds flat"},
+    !PHONE_MODE && {k:"Sentence endings", v: trail>0?"drops "+trail.toFixed(0)+" dB":"steady", s: band(trail,-99,4,6), note:"Keep volume to the last word"},
+    !PHONE_MODE && {k:"Volume steadiness", v: loudSD.toFixed(1)+" dB spread", s: band(loudSD,0,7,6), note:"Even, confident volume"},
     {k:"Word variety", v: Math.round(variety*100)+"% unique"+(repeats.length?" · repeats: "+repeats.map(([w,n])=>w+"×"+n).join(", "):""), s: words.length? band(variety*100,55,100,30):0, note:"Avoid repeating the same words"},
-    {k:"Speaking time", v: Math.round(speakSecs)+" of "+Math.round(secs)+" s", s: band(speakSecs/secs*100,55,85,30), note:"Too low = hesitating"}
-  ];
+    timingKnown && {k:"Speaking time", v: Math.round(speakSecs)+" of "+Math.round(secs)+" s", s: band(speakSecs/secs*100,55,85,30), note:"Too low = hesitating"}
+  ].filter(Boolean);
   M.forEach(m=>m.s=Math.round(m.s));
   const overall = Math.round(mean(M.map(m=>m.s)));
 
@@ -386,7 +456,7 @@ function analyse(text, secs){
   const TIP = {
     "Speed": wpm>160 ? "You spoke fast ("+wpm+" wpm). In class, slow down: after every key point, stop and count 'one' silently before moving on." :
              "You spoke slowly ("+wpm+" wpm). Prepare 3 points in your head before you start so the words flow; aim for about 130 wpm.",
-    "Pauses": long>0 ? "You had "+long+" long silence(s) over 2 seconds. When you lose your thread, bridge with a short summary ('So, the main point is…') instead of going silent." :
+    "Pauses": long2>0 ? "You had "+long2+" long silence(s) over 2 seconds. When you lose your thread, bridge with a short summary ('So, the main point is…') instead of going silent." :
               "Use more deliberate pauses. A 1-second pause after an important fact lets students write it down and makes you sound confident.",
     "Filler words": "You used "+fillerCount+" filler word(s). Replace each filler with a silent pause — silence sounds more confident than 'um' or 'actually'.",
     "Voice variety": "Your voice sounded fairly flat. Lift your pitch on key words and questions, and drop it at the end of statements — like telling a story.",
@@ -397,7 +467,7 @@ function analyse(text, secs){
   };
   const weak = [...M].filter(m=>m.s<85).sort((a,b)=>a.s-b.s).slice(0,3);
   const tips = weak.length ? weak.map(m=>TIP[m.k]) : ["Excellent minute! Tomorrow, challenge yourself with a harder topic or try the other language."];
-  if(!words.length) tips.unshift("I couldn't catch any words. Check that the microphone is allowed and speak a little closer to the device.");
+  if(PHONE_MODE) tips.push("Phone mode: voice variety and volume are measured on your laptop only.");
 
   // --- render ---
   const cls = s=> s>=80?"g":s>=55?"o":"b", lab = s=> s>=80?"Good":s>=55?"Okay":"Work on";
@@ -411,7 +481,7 @@ function analyse(text, secs){
   window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
 
   // --- save ---
-  const entry = {id:newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long,
+  const entry = {id:newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long2,
                  metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text};
   history.unshift(entry); history = history.slice(0,200);
   saveLocal();
@@ -423,7 +493,8 @@ function analyse(text, secs){
 // ---------- STORAGE & SYNC ----------
 function newId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function saveLocal(){ try{ localStorage.setItem("sc_history", JSON.stringify(history)); }catch(e){} }
-history.forEach(h=>{ if(!h.id) h.id = "old-" + h.date; });   // older sessions get an id
+history.forEach(h=>{ if(!h.id) h.id = "old-" + h.date; });
+history = history.filter(h=>h.wpm>0);   // drop sessions where no words were heard   // older sessions get an id
 let sync = {}; try{ sync = JSON.parse(localStorage.getItem("sc_sync")||"{}"); }catch(e){}
 const syncOn = ()=> !!(sync.url && sync.key);
 
@@ -447,7 +518,7 @@ async function syncAll(){
     let up = 0;
     for(const [id, x] of local){ if(!remote.has(id)){ if(await pushEntry(x)) up++; } }
     for(const [id, x] of remote){ if(!local.has(id)) local.set(id, x); }
-    history = [...local.values()].sort((a,b)=> new Date(b.date) - new Date(a.date)).slice(0,500);
+    history = [...local.values()].filter(h=>h.wpm>0).sort((a,b)=> new Date(b.date) - new Date(a.date)).slice(0,500);
     saveLocal(); renderHistory();
     $("syncMsg").textContent = `✅ Synced — ${history.length} sessions in total (${up} uploaded).`;
     $("syncState").textContent = "(on)";
@@ -535,6 +606,7 @@ function renderHistory(){
 }
 
 renderTopics(); renderHistory(); syncAll();
+if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
 </html>
