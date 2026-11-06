@@ -255,10 +255,10 @@ const PHONE_MODE = isAndroid;   // Android can't share the mic between recording
 if(PHONE_MODE) document.getElementById("listenWrap").classList.remove("hide");
 let listenOnly=false;
 let recording=false, rec=null, stream=null, ctx=null, analyser=null, tick=null, startT=0;
-let finalText="", interimText="", frames=[], recErr="", speechMarks=[], mediaRec=null, chunks=[], audioURL=null;
+let sessionFinal="", finalText="", interimText="", frames=[], recErr="", speechMarks=[], mediaRec=null, chunks=[], audioURL=null;
 
 async function start(){
-  frames=[]; finalText=""; interimText=""; recErr=""; speechMarks=[]; chunks=[];
+  frames=[]; finalText=""; sessionFinal=""; interimText=""; recErr=""; speechMarks=[]; chunks=[];
   if(audioURL){ URL.revokeObjectURL(audioURL); audioURL=null; }
   listenOnly = PHONE_MODE && $("listenOnly").checked;
   const useAudio = !PHONE_MODE || listenOnly;
@@ -289,15 +289,22 @@ async function start(){
   }, FRAME_MS);
 }
 function startRecognition(){
-  rec = new SR(); rec.lang = lang==="en" ? "en-US" : "bn-BD";
-  rec.continuous = !isAndroid; rec.interimResults = true;
+  rec = new SR(); rec.lang = lang==="en" ? "en-IN" : "bn-BD";   // Indian English suits South Asian accents
+  rec.continuous = true; rec.interimResults = true;
   rec.onresult = ev=>{
-    interimText="";
-    for(let i=ev.resultIndex;i<ev.results.length;i++){
-      const t = ev.results[i][0].transcript;
-      if(ev.results[i].isFinal) finalText += " " + t; else interimText += t;
+    // rebuild this listening session's text from all results (Android re-sends growing text)
+    const fin=[]; let interim="";
+    for(let i=0;i<ev.results.length;i++){
+      const t = ev.results[i][0].transcript.trim(); if(!t) continue;
+      if(ev.results[i].isFinal){
+        const prev = fin[fin.length-1], tl=t.toLowerCase();
+        if(prev && (tl.startsWith(prev.toLowerCase()))) fin[fin.length-1]=t;
+        else if(prev && prev.toLowerCase().startsWith(tl)) {}
+        else fin.push(t);
+      } else interim += " " + t;
     }
-    $("live").textContent = (finalText+" "+interimText).trim();
+    sessionFinal = fin.join(" "); interimText = interim.trim();
+    $("live").textContent = (finalText+" "+sessionFinal+" "+interimText).replace(/\s+/g," ").trim();
     if(PHONE_MODE) $("lvl").style.width = "100%";
   };
   rec.onspeechstart = ()=> speechMarks.push(["s", performance.now()]);
@@ -310,7 +317,9 @@ function startRecognition(){
     else if(e.error==="audio-capture") alert2("Another app is using the microphone. Close it and try again.");
     else if(e.error==="language-not-supported") alert2("This language isn't available on this device's speech service.");
   };
-  rec.onend = ()=>{ if(PHONE_MODE) $("lvl").style.width="0"; if(recording){ try{ rec.start(); }catch(e){} } };
+  rec.onend = ()=>{
+    finalText += " " + sessionFinal + (interimText ? " " + interimText : ""); sessionFinal=""; interimText="";
+    if(PHONE_MODE) $("lvl").style.width="0"; if(recording){ try{ rec.start(); }catch(e){} } };
   try{ rec.start(); }catch(e){ recErr = "start-failed"; }
 }
 function stop(){
@@ -328,7 +337,7 @@ function stop(){
   stream=null; ctx=null; analyser=null;
   $("lvl").style.width="0";
   setTimeout(()=>{   // wait for last words to arrive
-    const text = (finalText + " " + interimText).trim();
+    const text = (finalText + " " + sessionFinal + " " + interimText).replace(/\s+/g," ").trim();
     if(listenOnly){
       $("ring").textContent="🎧"; $("ring").className="ring g";
       $("verdict").textContent="Practice recording — listen back below";
