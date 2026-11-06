@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Med Log</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f766e">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Hind+Siliguri:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f4f6f8;--card:#fff;--ink:#1c2430;--muted:#6b7280;--accent:#0f766e;--accent2:#e6f4f2;--good:#2b8a3e;--warn:#d97706;--bad:#d6336c;--line:#e3e7ec}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,"Hind Siliguri",system-ui,sans-serif;background:var(--bg);color:var(--ink);-webkit-tap-highlight-color:transparent}
+  .wrap{max-width:760px;margin:0 auto;padding:14px 14px 40px}
+  header{display:flex;justify-content:space-between;align-items:center;margin:6px 2px 14px}
+  h1{font-size:22px;margin:0}
+  h2{font-size:16px;margin:0 0 10px}
+  .sub{color:var(--muted);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+  .pill{font-size:12px;padding:4px 10px;border-radius:20px;background:#eef1f4;color:var(--muted);white-space:nowrap}
+  .pill.on{background:var(--accent2);color:var(--accent)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+  .seg button.on{background:var(--accent);color:#fff}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .between{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .mic{display:block;margin:18px auto 8px;width:132px;height:132px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 8px 24px rgba(15,118,110,.35)}
+  .mic .ic{font-size:40px;display:block;line-height:1.1}
+  .mic.rec{background:var(--bad);animation:pulse 1.2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(214,51,108,.5)}70%{box-shadow:0 0 0 22px rgba(214,51,108,0)}100%{box-shadow:0 0 0 0 rgba(214,51,108,0)}}
+  .status{text-align:center;color:var(--muted);font-size:13px;min-height:18px}
+  .live{text-align:center;font-size:16px;min-height:24px;margin:6px 0 12px}
+  input,select,textarea{font:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);min-width:0}
+  input[type=text].grow{flex:1}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 13px;font:inherit;font-size:14px;cursor:pointer;color:var(--ink)}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.sm{padding:5px 9px;font-size:13px}
+  .btn.ghost{border-color:transparent;background:transparent}
+  .draft{border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:12px;padding:12px;margin:10px 0;position:relative}
+  .draft.attack{border-left-color:var(--bad)}
+  .draft.relief{border-left-color:var(--good)}
+  .draft .x{position:absolute;right:6px;top:6px}
+  .draft label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px}
+  .fields .full{grid-column:1/-1}
+  .fields input,.fields select{width:100%}
+  .flag{font-size:12px;color:var(--warn);margin-top:6px}
+  .heard{font-size:12px;color:var(--muted);margin-top:8px;font-style:italic}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--line);border-radius:20px;padding:5px 10px;font-size:13px;background:#fff;cursor:pointer}
+  .chip.on{background:#fde8ef;border-color:var(--bad);color:var(--bad)}
+  .meter{margin:10px 0}
+  .meter .bar{height:10px;background:#edf0f3;border-radius:6px;overflow:hidden;margin-top:4px}
+  .meter .bar i{display:block;height:100%;border-radius:6px}
+  .alert{border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px}
+  .alert.warn{background:#fff4e0;color:#8a4b00;border:1px solid #f6d49a}
+  .alert.bad{background:#fde8ef;color:#a61e4d;border:1px solid #f3b6cb}
+  .alert.ok{background:#e9f7ec;color:#1e6b30;border:1px solid #b9e2c3}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+  .stat{border:1px solid var(--line);border-radius:12px;padding:9px}
+  .stat .k{font-size:11px;color:var(--muted)}
+  .stat .v{font-size:20px;font-weight:700}
+  .stat .d{font-size:11px}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal .h{font-size:11px;color:var(--muted);text-align:center}
+  .day{border:1px solid var(--line);border-radius:8px;min-height:54px;padding:3px 4px;font-size:11px;position:relative;background:#fff}
+  .day.blank{border:0;background:transparent}
+  .day.today{outline:2px solid var(--accent)}
+  .day .n{font-weight:600}
+  .day .dots{display:flex;flex-wrap:wrap;gap:2px;margin-top:2px}
+  .day .dots b{font-size:9px;color:#fff;border-radius:4px;padding:0 3px;line-height:14px}
+  .day .pv{position:absolute;right:3px;top:2px;color:var(--good);font-weight:700}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--muted);margin-top:8px;align-items:center}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line)}
+  th{font-size:12px;color:var(--muted);font-weight:600}
+  td.num,th.num{text-align:right}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .log .dayhead{font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 4px}
+  .log .item{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .log .item .t{width:64px;color:var(--muted);font-size:13px;flex:none}
+  .log .item .w{flex:1}
+  .insight{font-size:14px;margin:4px 0}
+  details summary{cursor:pointer;font-weight:600}
+  .medrow{display:grid;grid-template-columns:1.4fr 1.1fr .7fr .7fr auto;gap:6px;margin:6px 0;align-items:center}
+  .medrow input,.medrow select{width:100%;font-size:13px;padding:7px}
+  .medrow .al{grid-column:1/-1;font-size:12px}
+  textarea{width:100%;min-height:120px;font-family:ui-monospace,monospace;font-size:11px}
+  ol.steps{padding-left:20px;font-size:14px;line-height:1.55}
+  .hide{display:none!important}
+  @media (max-width:520px){.stats{grid-template-columns:repeat(2,1fr)}.medrow{grid-template-columns:1fr 1fr}.day{min-height:46px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>💊 Med Log</h1><div class="sub" id="today"></div></div>
+    <span class="pill" id="syncPill">☁️ not synced</span>
+  </header>
+
+  <div id="alerts"></div>
+
+  <!-- SPEAK -->
+  <div class="card">
+    <div class="between">
+      <h2 style="margin:0">Tap and say what you took</h2>
+      <div class="seg" id="langSeg"><button data-l="bn-BD" class="on">বাংলা + Eng</button><button data-l="en-IN">English</button></div>
+    </div>
+    <button class="mic" id="mic"><span class="ic">🎙️</span><span id="micLbl">Tap to speak</span></button>
+    <div class="status" id="status">e.g. “Napa 1000 খেলাম রাত ৮টায়” · “মাথাব্যথা ৭, বমি ভাব” · “ব্যথা কমেছে”</div>
+    <div class="live" id="live"></div>
+    <div class="row">
+      <input type="text" class="grow" id="typed" placeholder="…or type it here, e.g. zolmitriptan 2.5 at 7 pm">
+      <button class="btn" id="typedGo">Add</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sm" id="addDose">+ Medicine (manual)</button>
+      <button class="btn sm" id="addAttack">+ Migraine attack (manual)</button>
+    </div>
+  </div>
+
+  <!-- DRAFTS -->
+  <div class="card hide" id="draftCard">
+    <div class="between"><h2 style="margin:0">Check and save</h2><span class="sub">Fix anything that's wrong</span></div>
+    <div id="drafts"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="cancelDrafts">Cancel</button><button class="btn pri" id="saveDrafts">Save</button></div>
+  </div>
+
+  <!-- OVERUSE -->
+  <div class="card">
+    <div class="between"><h2 style="margin:0">Overuse check · last 30 days</h2><span class="sub">days with an acute medicine</span></div>
+    <div id="meters"></div>
+    <div class="sub" style="margin-top:6px">ICHD-3 thresholds for medication-overuse headache: triptan or opioid ≥10 days/month, paracetamol or NSAID ≥15 days/month, or mixed acute medicines ≥10 days/month. Diagnosis needs this for &gt;3 months — treat this as an early warning.</div>
+  </div>
+
+  <!-- REPORT -->
+  <div class="card">
+    <div class="between">
+      <h2 style="margin:0">Report</h2>
+      <div class="seg" id="perSeg"><button data-p="week" class="on">Week</button><button data-p="month">Month</button></div>
+    </div>
+    <div class="between" style="margin-top:10px">
+      <button class="btn sm" id="prevP">◀</button><b id="perLbl"></b><button class="btn sm" id="nextP">▶</button>
+    </div>
+    <div id="report"></div>
+  </div>
+
+  <!-- RECENT -->
+  <div class="card">
+    <h2>Recent entries</h2>
+    <div class="log" id="recent"></div>
+  </div>
+
+  <!-- MEDS -->
+  <div class="card">
+    <details id="medBox">
+      <summary>🧾 My medicines <span class="sub">(names, groups, usual dose, other names)</span></summary>
+      <p class="sub">The group decides how a medicine counts in the overuse check. “Other names” helps the app recognise brand names or the way your phone spells it in Bangla — separate them with commas.</p>
+      <div id="medList"></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" id="medAdd">+ Add medicine</button><button class="btn sm" id="medReset">Restore default list</button></div>
+    </details>
+  </div>
+
+  <!-- SYNC -->
+  <div class="card">
+    <details id="syncBox">
+      <summary>☁️ Sync with Google Sheet <span class="sub" id="syncState">(off)</span></summary>
+      <div id="syncSetup">
+        <p class="sub">Do this once, on your laptop. Your records will go to a private Google Sheet that only you can open, and your phone will show the same data.</p>
+        <ol class="steps">
+          <li>Open <a href="https://sheets.new" target="_blank" rel="noopener">sheets.new</a> (signed in to your Google account). Name the sheet <b>Medicine Log</b>.</li>
+          <li>In that sheet click <b>Extensions → Apps Script</b>. Delete everything in the code box.</li>
+          <li>Click <button class="btn sm" id="copyCode">📋 Copy setup code</button> and paste it into the code box. Click 💾 <b>Save</b>.</li>
+          <li>Click <b>Deploy → New deployment</b>. Click the ⚙️ next to “Select type” → <b>Web app</b>. Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Click <b>Deploy</b>.</li>
+          <li>Click <b>Authorize access</b> → choose your account → <b>Advanced</b> → <b>Go to … (unsafe)</b> → <b>Allow</b>. (This warning appears because the script is your own, not a published app.)</li>
+          <li>Copy the <b>Web app URL</b> and paste it here:</li>
+        </ol>
+        <textarea id="codeBox" readonly class="hide"></textarea>
+      </div>
+      <input type="text" id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:100%;margin-bottom:8px">
+      <div class="row"><button class="btn pri" id="syncSave">Connect &amp; sync</button><button class="btn" id="syncNowBtn">Sync now</button><button class="btn" id="syncOff">Turn off</button></div>
+      <div class="sub" id="syncMsg" style="margin-top:8px"></div>
+      <div id="phoneBox" class="hide" style="margin-top:12px">
+        <b>Set up your phone</b>
+        <p class="sub">Click below, send the copied link to yourself (WhatsApp/email), and open it on your phone in Chrome. It connects the phone to the same sheet automatically. Keep this link private.</p>
+        <button class="btn" id="copyPhone">📱 Copy phone link</button>
+      </div>
+    </details>
+  </div>
+
+  <p class="sub" style="text-align:center">Records stay on your devices and in your own Google Sheet. Nothing is sent anywhere else.</p>
+</div>
+
+<datalist id="medNames"></datalist>
+<script src="parser.js"></script>
+<script>
+"use strict";
+const { CLASSES, DEFAULT_MEDS } = MedParser;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const DAY = 864e5;
+const pad = n => String(n).padStart(2, "0");
+const dayKey = t => { const d = new Date(t); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+const startOfDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return +d; };
+const fmtTime = t => new Date(t).toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true }).replace(" ", " ");
+const fmtDay = t => new Date(t).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const toLocalInput = t => { const d = new Date(t); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const fromLocalInput = v => (v ? +new Date(v) : 0);
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+
+// ---------- STATE ----------
+let entries = store.get("ml_entries", []);
+let medsDoc = store.get("ml_meds", null) || { updated: 0, list: DEFAULT_MEDS };
+let sync = store.get("ml_sync", {});
+if (!sync.key) { const a = new Uint8Array(12); crypto.getRandomValues(a); sync.key = "ml-" + [...a].map(b => b.toString(16).padStart(2, "0")).join(""); store.set("ml_sync", sync); }
+let drafts = [];
+let lang = store.get("ml_lang", "bn-BD");
+let per = { mode: "week", off: 0 };
+const live = () => entries.filter(e => !e.deleted);
+const meds = () => medsDoc.list;
+const medBy = name => meds().find(m => m.name.toLowerCase() === String(name || "").trim().toLowerCase());
+function saveEntries() { store.set("ml_entries", entries); }
+function saveMeds(touch) { if (touch) medsDoc.updated = Date.now(); store.set("ml_meds", medsDoc); }
+
+// ---------- SPEECH ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+document.querySelectorAll("#langSeg button").forEach(b => {
+  b.classList.toggle("on", b.dataset.l === lang);
+  b.onclick = () => { lang = b.dataset.l; store.set("ml_lang", lang); document.querySelectorAll("#langSeg button").forEach(x => x.classList.toggle("on", x === b)); };
+});
+$("mic").onclick = () => {
+  if (!SR) { $("status").textContent = "Voice isn't supported in this browser. Please open the app in Google Chrome, or type below."; return; }
+  if (listening) { rec && rec.stop(); return; }
+  rec = new SR();
+  rec.lang = lang; rec.interimResults = true; rec.maxAlternatives = 4; rec.continuous = false;
+  let finalAlts = null;
+  rec.onstart = () => { listening = true; $("mic").classList.add("rec"); $("micLbl").textContent = "Listening… tap to stop"; $("status").textContent = "Speak now"; $("live").textContent = ""; };
+  rec.onresult = ev => {
+    let txt = "";
+    for (let i = 0; i < ev.results.length; i++) txt += ev.results[i][0].transcript + " ";
+    $("live").textContent = txt.trim();
+    const last = ev.results[ev.results.length - 1];
+    if (last.isFinal) {
+      // build every combination of alternatives for the final phrase and keep the one we understand best
+      const prefix = [...ev.results].slice(0, -1).map(r => r[0].transcript).join(" ");
+      finalAlts = [...last].map(a => (prefix + " " + a.transcript).trim());
+    }
+  };
+  rec.onerror = e => {
+    $("status").textContent = e.error === "not-allowed" ? "Microphone blocked — allow the microphone for this site in Chrome settings."
+      : e.error === "no-speech" ? "Didn't hear anything. Tap and try again." : e.error === "network" ? "Voice needs internet. Please type instead." : "Voice error: " + e.error;
+  };
+  rec.onend = () => {
+    listening = false; $("mic").classList.remove("rec"); $("micLbl").textContent = "Tap to speak";
+    const alts = finalAlts || ($("live").textContent ? [$("live").textContent] : []);
+    if (alts.length) handleText(alts);
+  };
+  try { rec.start(); } catch (e) { $("status").textContent = "Couldn't start the microphone. Try again."; }
+};
+function handleText(alts) {
+  let best = null;
+  for (const t of alts) {
+    const items = MedParser.parse(t, meds(), Date.now());
+    const sc = MedParser.score(items);
+    if (!best || sc > best.sc) best = { t, items, sc };
+  }
+  $("live").textContent = "“" + best.t + "”";
+  if (!best.items.length) { $("status").textContent = "I didn't catch a medicine or headache. Try again, or type it."; return; }
+  $("status").textContent = "Check the details below and tap Save.";
+  addDrafts(best.items);
+}
+$("typedGo").onclick = () => { const v = $("typed").value.trim(); if (v) { handleText([v]); $("typed").value = ""; } };
+$("typed").addEventListener("keydown", e => { if (e.key === "Enter") $("typedGo").onclick(); });
+$("addDose").onclick = () => addDrafts([{ kind: "dose", ts: Date.now(), drug: "", cls: "other", dose: "", unit: "mg" }]);
+$("addAttack").onclick = () => addDrafts([{ kind: "attack", ts: Date.now(), severity: 5, symptoms: [], triggers: [], relief: "", end: 0, note: "" }]);
+
+// ---------- DRAFTS ----------
+const SYMS = ["Aura", "Nausea/vomiting", "Light sensitivity", "Sound sensitivity"];
+const TRIGS = ["Poor sleep", "Stress", "Missed meal", "Sun/heat", "Screen time", "Night duty", "Noise", "Smell", "Travel", "Caffeine", "Weather"];
+const RELIEF_TXT = { "": "—", complete: "Pain gone", partial: "Partly better", none: "No relief" };
+const UNITS = ["mg", "mcg", "g", "ml", "tab", "puff", "drop", "unit"];
+
+function lastOpenAttack(before) {
+  return live().filter(e => e.type === "attack" && e.ts <= before + 60000 && before - e.ts < 3 * DAY).sort((a, b) => b.ts - a.ts)[0];
+}
+function addDrafts(items) {
+  items.forEach(it => {
+    if (it.kind === "relief") {
+      const a = lastOpenAttack(it.ts);
+      if (!a) { it = { kind: "attack", ts: it.ts, severity: 5, sevGuessed: true, symptoms: [], triggers: [], relief: it.relief, end: it.ts, note: "", heard: it.heard, noAttackFound: true }; }
+      else { it.target = a.id; it.end = it.ts; }
+    }
+    drafts.push(it);
+  });
+  renderDrafts();
+  $("draftCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function clsOptions(sel) { return Object.entries(CLASSES).map(([k, c]) => `<option value="${k}" ${k === sel ? "selected" : ""}>${c.name}</option>`).join(""); }
+function renderDrafts() {
+  $("draftCard").classList.toggle("hide", !drafts.length);
+  $("medNames").innerHTML = meds().map(m => `<option value="${esc(m.name)}">`).join("");
+  $("drafts").innerHTML = drafts.map((d, i) => {
+    const x = `<button class="btn sm ghost x" data-rm="${i}" title="Remove">✕</button>`;
+    const heard = d.heard ? `<div class="heard">Heard: “${esc(d.heard)}”</div>` : "";
+    const tflag = d.timeGuessed ? `<div class="flag">⏱ Time not said clearly — check it.</div>` : "";
+    if (d.kind === "dose") {
+      const unknown = d.drug && !medBy(d.drug) ? `<div class="flag">“${esc(d.drug)}” isn't in your list — it will be added when you save. Pick its group.</div>` : "";
+      return `<div class="draft">${x}<b>💊 ${d.id ? "Edit medicine" : "Medicine"}</b>
+        <div class="fields">
+          <div class="full"><label>Medicine</label><input list="medNames" data-i="${i}" data-f="drug" value="${esc(d.drug)}" placeholder="name"></div>
+          <div><label>Dose</label><input type="number" step="any" inputmode="decimal" data-i="${i}" data-f="dose" value="${esc(d.dose)}"></div>
+          <div><label>Unit</label><select data-i="${i}" data-f="unit">${UNITS.map(u => `<option ${u === d.unit ? "selected" : ""}>${u}</option>`).join("")}</select></div>
+          <div><label>Group</label><select data-i="${i}" data-f="cls">${clsOptions(d.cls)}</select></div>
+          <div><label>Taken at</label><input type="datetime-local" data-i="${i}" data-f="ts" value="${toLocalInput(d.ts)}"></div>
+        </div>${unknown}${tflag}${heard}</div>`;
+    }
+    if (d.kind === "attack") {
+      return `<div class="draft attack">${x}<b>⚡ ${d.id ? "Edit migraine attack" : "Migraine attack"}</b>
+        ${d.noAttackFound ? `<div class="flag">No recent attack was logged, so a new one is made with this relief.</div>` : ""}
+        <div class="fields">
+          <div><label>Started</label><input type="datetime-local" data-i="${i}" data-f="ts" value="${toLocalInput(d.ts)}"></div>
+          <div><label>Severity: <b id="sv${i}">${d.severity}</b>/10</label><input type="range" min="0" max="10" data-i="${i}" data-f="severity" value="${d.severity}"></div>
+          <div class="full"><label>Symptoms</label><div class="chips">${SYMS.map(s => `<span class="chip ${d.symptoms.includes(s) ? "on" : ""}" data-i="${i}" data-chip="symptoms" data-v="${s}">${s}</span>`).join("")}</div></div>
+          <div class="full"><label>Possible triggers</label><div class="chips">${TRIGS.map(s => `<span class="chip ${d.triggers.includes(s) ? "on" : ""}" data-i="${i}" data-chip="triggers" data-v="${s}">${s}</span>`).join("")}</div></div>
+          <div><label>Relief</label><select data-i="${i}" data-f="relief">${Object.entries(RELIEF_TXT).map(([k, v]) => `<option value="${k}" ${k === d.relief ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+          <div><label>Ended (optional)</label><input type="datetime-local" data-i="${i}" data-f="end" value="${d.end ? toLocalInput(d.end) : ""}"></div>
+          <div class="full"><label>Note</label><input type="text" data-i="${i}" data-f="note" value="${esc(d.note)}"></div>
+        </div>${d.sevGuessed ? `<div class="flag">Severity not said — set to 5. Adjust if needed.</div>` : ""}${tflag}${heard}</div>`;
+    }
+    const a = entries.find(e => e.id === d.target);
+    return `<div class="draft relief">${x}<b>✅ Update attack of ${fmtDay(a.ts)}, ${fmtTime(a.ts)} (severity ${a.severity})</b>
+      <div class="fields">
+        <div><label>Relief</label><select data-i="${i}" data-f="relief">${Object.entries(RELIEF_TXT).filter(([k]) => k).map(([k, v]) => `<option value="${k}" ${k === d.relief ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        <div><label>${d.relief === "none" ? "Checked at" : "Pain better at"}</label><input type="datetime-local" data-i="${i}" data-f="end" value="${toLocalInput(d.end)}"></div>
+      </div>${heard}</div>`;
+  }).join("");
+}
+$("drafts").addEventListener("input", e => {
+  const el = e.target, i = +el.dataset.i, f = el.dataset.f; if (!f || !drafts[i]) return;
+  let v = el.value;
+  if (f === "ts" || f === "end") v = fromLocalInput(v);
+  if (f === "severity") { v = +v; $("sv" + i).textContent = v; drafts[i].sevGuessed = false; }
+  if (f === "dose") v = v === "" ? "" : +v;
+  drafts[i][f] = v;
+  if (f === "drug") { const m = medBy(v); if (m) { drafts[i].cls = m.cls; drafts[i].unit = m.unit; if (drafts[i].dose === "" || drafts[i].dose == null) drafts[i].dose = m.dose; renderDrafts(); } }
+  if (f === "ts") drafts[i].timeGuessed = false;
+});
+$("drafts").addEventListener("change", e => { if (e.target.dataset.f === "drug" || e.target.dataset.f === "relief") renderDrafts(); });
+$("drafts").addEventListener("click", e => {
+  const rm = e.target.dataset.rm; if (rm !== undefined) { drafts.splice(+rm, 1); renderDrafts(); return; }
+  const c = e.target.dataset.chip; if (c) { const d = drafts[+e.target.dataset.i]; const v = e.target.dataset.v;
+    d[c] = d[c].includes(v) ? d[c].filter(x => x !== v) : [...d[c], v]; e.target.classList.toggle("on"); }
+});
+$("cancelDrafts").onclick = () => { drafts = []; renderDrafts(); $("status").textContent = ""; $("live").textContent = ""; };
+$("saveDrafts").onclick = () => {
+  const now = Date.now(), before = moh();
+  for (const d of drafts) {
+    if (d.kind === "dose") {
+      const name = String(d.drug || "").trim(); if (!name) continue;
+      let m = medBy(name);
+      if (!m) { m = { name, cls: d.cls, dose: d.dose === "" ? null : d.dose, unit: d.unit, str: [], alias: [] }; medsDoc.list.push(m); saveMeds(true); }
+      upsert({ id: d.id || newId(), type: "dose", ts: d.ts, drug: m.name, cls: d.cls || m.cls, dose: d.dose === "" ? "" : d.dose, unit: d.unit, heard: d.heard || "", updated: now, deleted: 0 });
+    } else if (d.kind === "attack") {
+      upsert({ id: d.id || newId(), type: "attack", ts: d.ts, severity: d.severity, symptoms: d.symptoms.join(", "), triggers: d.triggers.join(", "),
+        relief: d.relief || "", end: d.end || "", note: d.note || "", heard: d.heard || "", updated: now, deleted: 0 });
+    } else {
+      const a = entries.find(e => e.id === d.target);
+      if (a) upsert({ ...a, relief: d.relief, end: d.end, updated: now });
+    }
+  }
+  drafts = []; renderDrafts();
+  $("status").textContent = "✅ Saved."; $("live").textContent = "";
+  renderAll(); notifyOveruse(before);
+  pushSoon();
+};
+function upsert(e) { const i = entries.findIndex(x => x.id === e.id); if (i >= 0) entries[i] = e; else entries.push(e); saveEntries(); }
+
+// ---------- OVERUSE ----------
+function moh(end = Date.now()) {
+  const from = startOfDay(end) - 29 * DAY;
+  const days = { any: new Set() }, classes = new Set();
+  for (const e of live()) {
+    if (e.type !== "dose" || e.ts < from || e.ts > end) continue;
+    const c = CLASSES[e.cls]; if (!c || !c.acute) continue;
+    (days[e.cls] = days[e.cls] || new Set()).add(dayKey(e.ts)); days.any.add(dayKey(e.ts)); classes.add(e.cls);
+  }
+  const out = {};
+  for (const k of ["triptan", "paracetamol", "nsaid", "opioid"]) out[k] = days[k] ? days[k].size : 0;
+  out.any = days.any.size; out.multi = classes.size > 1;
+  return out;
+}
+function levelOf(n, warn, limit) { return n >= limit ? "bad" : n >= warn ? "warn" : "ok"; }
+function mohRows(m) {
+  const rows = [];
+  for (const k of ["triptan", "paracetamol", "nsaid", "opioid"]) {
+    if (k === "opioid" && !m.opioid) continue;
+    const c = CLASSES[k]; rows.push({ k, label: c.name + " days", n: m[k], warn: c.warn, limit: c.limit, color: c.color });
+  }
+  rows.push({ k: "any", label: "All acute medicines (mixed use)", n: m.any, warn: 7, limit: 10, color: "#495057", na: !m.multi });
+  return rows;
+}
+function renderMeters() {
+  const m = moh();
+  $("meters").innerHTML = mohRows(m).map(r => {
+    const lv = r.na ? "ok" : levelOf(r.n, r.warn, r.limit);
+    const col = lv === "bad" ? "var(--bad)" : lv === "warn" ? "var(--warn)" : r.color;
+    return `<div class="meter"><div class="between"><span>${r.label}</span><b style="color:${lv === "ok" ? "inherit" : col}">${r.n} / ${r.limit}${r.na && r.n ? ' <span class="sub">(one group only — not counted)</span>' : ""}</b></div>
+      <div class="bar"><i style="width:${Math.min(100, (r.n / r.limit) * 100)}%;background:${col}"></i></div></div>`;
+  }).join("");
+  const worst = mohRows(m).filter(r => !r.na).map(r => ({ r, lv: levelOf(r.n, r.warn, r.limit) })).filter(x => x.lv !== "ok");
+  $("alerts").innerHTML = worst.map(({ r, lv }) => `<div class="alert ${lv}">${lv === "bad" ? "⛔" : "⚠️"} <b>${r.label}: ${r.n} in the last 30 days</b> — ${lv === "bad" ? "at or above the overuse threshold (" + r.limit + ")." : "approaching the overuse threshold (" + r.limit + ")."}</div>`).join("");
+}
+function notifyOveruse(before) {
+  const after = moh();
+  const crossed = mohRows(after).filter(r => !r.na && levelOf(r.n, r.warn, r.limit) !== "ok" && r.n > (before[r.k] || 0));
+  if (crossed.length) $("status").textContent = "✅ Saved — ⚠️ check the overuse warning at the top.";
+}
+
+// ---------- REPORT ----------
+document.querySelectorAll("#perSeg button").forEach(b => b.onclick = () => {
+  per = { mode: b.dataset.p, off: 0 };
+  document.querySelectorAll("#perSeg button").forEach(x => x.classList.toggle("on", x === b)); renderReport();
+});
+$("prevP").onclick = () => { per.off--; renderReport(); };
+$("nextP").onclick = () => { if (per.off < 0) { per.off++; renderReport(); } };
+function periodRange(mode, off) {
+  const now = new Date();
+  if (mode === "week") {   // weeks run Saturday → Friday
+    const s = new Date(startOfDay(now)); s.setDate(s.getDate() - ((s.getDay() + 1) % 7) + off * 7);
+    const e = new Date(s); e.setDate(e.getDate() + 7);
+    return { from: +s, to: +e };
+  }
+  const s = new Date(now.getFullYear(), now.getMonth() + off, 1), e = new Date(now.getFullYear(), now.getMonth() + off + 1, 1);
+  return { from: +s, to: +e };
+}
+function summarize(from, to) {
+  const list = live().filter(e => e.ts >= from && e.ts < to);
+  const doses = list.filter(e => e.type === "dose"), attacks = list.filter(e => e.type === "attack");
+  const byDrug = {};
+  for (const d of doses) {
+    const k = d.drug; const o = byDrug[k] = byDrug[k] || { drug: k, cls: d.cls, n: 0, days: new Set(), total: 0, unit: d.unit, mixed: false };
+    o.n++; o.days.add(dayKey(d.ts)); if (d.dose !== "" && d.dose != null) { if (o.unit !== d.unit) o.mixed = true; o.total += +d.dose; }
+  }
+  const acuteDays = new Set(doses.filter(d => (CLASSES[d.cls] || {}).acute).map(d => dayKey(d.ts)));
+  const cls = k => new Set(doses.filter(d => d.cls === k).map(d => dayKey(d.ts))).size;
+  const sev = attacks.map(a => +a.severity || 0);
+  const withRelief = attacks.filter(a => a.relief);
+  return {
+    list, doses, attacks, byDrug: Object.values(byDrug).sort((a, b) => b.n - a.n),
+    attackDays: new Set(attacks.map(a => dayKey(a.ts))).size,
+    avgSev: sev.length ? sev.reduce((a, b) => a + b, 0) / sev.length : 0, maxSev: sev.length ? Math.max(...sev) : 0,
+    acuteDays: acuteDays.size, triptanDays: cls("triptan"), analgesicDays: new Set(doses.filter(d => d.cls === "paracetamol" || d.cls === "nsaid").map(d => dayKey(d.ts))).size,
+    reliefRate: withRelief.length ? withRelief.filter(a => a.relief !== "none").length / withRelief.length : null, reliefN: withRelief.length
+  };
+}
+function diffTxt(a, b, lowerBetter = true) {
+  if (b === null || b === undefined) return "";
+  const d = +(a - b).toFixed(1); if (!d) return `<span class="d sub">same as before</span>`;
+  const good = lowerBetter ? d < 0 : d > 0;
+  return `<span class="d" style="color:${good ? "var(--good)" : "var(--bad)"}">${d > 0 ? "▲" : "▼"} ${Math.abs(d)} vs previous</span>`;
+}
+function sevColor(s) { return s >= 7 ? "#f03e3e" : s >= 4 ? "#ffa8a8" : s > 0 ? "#ffe3e3" : "#fff"; }
+function renderReport() {
+  const { from, to } = periodRange(per.mode, per.off);
+  const prev = periodRange(per.mode, per.off - 1);
+  const S = summarize(from, to), P = summarize(prev.from, prev.to);
+  const label = per.mode === "week" ? `${fmtDay(from)} – ${fmtDay(to - DAY)}` : new Date(from).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  $("perLbl").textContent = label;
+  $("nextP").disabled = per.off >= 0;
+  const elapsedTo = Math.min(to, startOfDay(Date.now()) + DAY);
+  const nDays = Math.max(1, Math.round((elapsedTo - from) / DAY));
+  const prevHas = P.list.length > 0;
+
+  // calendar
+  const byDay = {};
+  for (const e of S.list) { const k = dayKey(e.ts); (byDay[k] = byDay[k] || []).push(e); }
+  const heads = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+  let cal = heads.map(h => `<div class="h">${h}</div>`).join("");
+  const lead = (new Date(from).getDay() + 1) % 7;
+  for (let i = 0; i < lead; i++) cal += `<div class="day blank"></div>`;
+  for (let t = from; t < to; t = startOfDay(t + DAY + 3600e3)) {
+    const k = dayKey(t), es = byDay[k] || [];
+    const atk = es.filter(e => e.type === "attack"), ms = Math.max(0, ...atk.map(a => +a.severity || 0));
+    const acute = [...new Set(es.filter(e => e.type === "dose" && (CLASSES[e.cls] || {}).acute).map(e => e.cls))];
+    const prevTaken = es.some(e => e.type === "dose" && e.cls === "preventive");
+    const letter = { triptan: "T", nsaid: "N", paracetamol: "P", opioid: "O" };
+    const future = t > Date.now();
+    cal += `<div class="day ${k === dayKey(Date.now()) ? "today" : ""}" style="background:${atk.length ? sevColor(ms) : future ? "#fafbfc" : "#fff"};${ms >= 7 ? "color:#fff" : ""}">
+      <span class="n">${new Date(t).getDate()}</span>${prevTaken ? `<span class="pv" title="Preventive taken">✓</span>` : ""}
+      <div class="dots">${acute.map(c => `<b style="background:${CLASSES[c].color}">${letter[c]}</b>`).join("")}</div>
+      ${atk.length ? `<div style="font-size:10px">⚡${ms}</div>` : ""}</div>`;
+  }
+
+  const stat = (k, v, d) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${d || ""}</div>`;
+  let html = `<div class="stats">
+    ${stat("Attacks", S.attacks.length, prevHas ? diffTxt(S.attacks.length, P.attacks.length) : "")}
+    ${stat("Headache days", S.attackDays, prevHas ? diffTxt(S.attackDays, P.attackDays) : "")}
+    ${stat("Avg severity", S.attacks.length ? S.avgSev.toFixed(1) : "–", prevHas && S.attacks.length && P.attacks.length ? diffTxt(+S.avgSev.toFixed(1), +P.avgSev.toFixed(1)) : "")}
+    ${stat("Acute-medicine days", S.acuteDays, prevHas ? diffTxt(S.acuteDays, P.acuteDays) : "")}
+    ${stat("Triptan days", S.triptanDays)}
+    ${stat("Paracetamol/NSAID days", S.analgesicDays)}
+    ${stat("Worst attack", S.attacks.length ? S.maxSev + "/10" : "–")}
+    ${stat("Relief achieved", S.reliefRate === null ? "–" : Math.round(S.reliefRate * 100) + "%", S.reliefN ? `<div class="d sub">${S.reliefN} attack${S.reliefN > 1 ? "s" : ""} rated</div>` : "")}
+  </div>
+  <div class="cal">${cal}</div>
+  <div class="legend"><span><i class="sw" style="background:#ffe3e3;border:1px solid #eee"></i>mild</span><span><i class="sw" style="background:#ffa8a8"></i>moderate</span><span><i class="sw" style="background:#f03e3e"></i>severe attack</span>
+    <span><b style="color:#fff;background:${CLASSES.triptan.color};border-radius:3px;padding:0 3px">T</b>triptan</span><span><b style="color:#fff;background:${CLASSES.nsaid.color};border-radius:3px;padding:0 3px">N</b>NSAID</span>
+    <span><b style="color:#fff;background:${CLASSES.paracetamol.color};border-radius:3px;padding:0 3px">P</b>paracetamol</span><span style="color:var(--good)">✓ preventive taken</span></div>`;
+
+  if (S.byDrug.length) {
+    html += `<h2 style="margin-top:16px">Medicines</h2><table><tr><th>Medicine</th><th class="num">Doses</th><th class="num">Days</th><th class="num">Total</th></tr>` +
+      S.byDrug.map(o => {
+        const c = CLASSES[o.cls] || CLASSES.other;
+        const adh = o.cls === "preventive" ? `<div class="sub">taken on ${o.days.size} of ${nDays} days (${Math.round(o.days.size / nDays * 100)}%)</div>` : "";
+        return `<tr><td><span class="dot" style="background:${c.color}"></span>${esc(o.drug)} <span class="sub">${c.name}</span>${adh}</td><td class="num">${o.n}</td><td class="num">${o.days.size}</td><td class="num">${o.mixed ? "mixed" : +o.total.toFixed(2) + " " + esc(o.unit)}</td></tr>`;
+      }).join("") + `</table>`;
+  }
+  // insights
+  const ins = [];
+  const treated = S.attacks.filter(a => S.doses.some(d => (CLASSES[d.cls] || {}).acute && d.ts >= a.ts - 2 * 3600e3 && d.ts <= a.ts + 12 * 3600e3));
+  if (S.attacks.length) ins.push(`Treated with an acute medicine: ${treated.length} of ${S.attacks.length} attacks.`);
+  const trig = {}; S.attacks.forEach(a => String(a.triggers || "").split(", ").filter(Boolean).forEach(t => trig[t] = (trig[t] || 0) + 1));
+  const topT = Object.entries(trig).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  if (topT.length) ins.push(`Most common triggers: ${topT.map(([t, n]) => `${t} (${n})`).join(", ")}.`);
+  const rel = {}; S.attacks.filter(a => a.relief).forEach(a => {
+    const ds = S.doses.filter(d => (CLASSES[d.cls] || {}).acute && d.ts >= a.ts - 2 * 3600e3 && d.ts <= (a.end || a.ts + 12 * 3600e3));
+    ds.forEach(d => { const r = rel[d.drug] = rel[d.drug] || { ok: 0, n: 0 }; r.n++; if (a.relief !== "none") r.ok++; });
+  });
+  Object.entries(rel).forEach(([drug, r]) => ins.push(`${esc(drug)}: relief in ${r.ok} of ${r.n} rated attacks.`));
+  if (per.mode === "month" && S.acuteDays) ins.push(`Acute medicine used on ${S.acuteDays} days this month.`);
+  if (!S.list.length) ins.push("No entries in this period yet.");
+  html += `<div style="margin-top:12px">${ins.map(t => `<div class="insight">• ${t}</div>`).join("")}</div>`;
+  $("report").innerHTML = html;
+}
+
+// ---------- RECENT ----------
+function describe(e) {
+  if (e.type === "dose") { const c = CLASSES[e.cls] || CLASSES.other;
+    return `<span class="dot" style="background:${c.color}"></span><b>${esc(e.drug)}</b> ${e.dose !== "" && e.dose != null ? esc(e.dose) + " " + esc(e.unit) : ""} <span class="sub">${c.name}</span>`; }
+  const bits = [`severity ${e.severity}/10`];
+  if (e.symptoms) bits.push(esc(e.symptoms));
+  if (e.relief) bits.push(RELIEF_TXT[e.relief] + (e.end ? " by " + fmtTime(e.end) : ""));
+  if (e.triggers) bits.push("trigger: " + esc(e.triggers));
+  return `⚡ <b>Migraine attack</b> <span class="sub">${bits.join(" · ")}</span>`;
+}
+function renderRecent() {
+  const all = live().sort((a, b) => b.ts - a.ts), list = all.slice(0, recentN);
+  if (!list.length) { $("recent").innerHTML = `<div class="sub">Nothing yet. Tap the microphone and say your first medicine.</div>`; return; }
+  let html = "", last = "";
+  for (const e of list) {
+    const k = dayKey(e.ts);
+    if (k !== last) { html += `<div class="dayhead">${k === dayKey(Date.now()) ? "Today" : k === dayKey(Date.now() - DAY) ? "Yesterday" : fmtDay(e.ts)}</div>`; last = k; }
+    html += `<div class="item"><span class="t">${fmtTime(e.ts)}</span><span class="w">${describe(e)}</span>
+      <button class="btn sm ghost" data-edit="${e.id}" title="Edit">✏️</button><button class="btn sm ghost" data-del="${e.id}" title="Delete">🗑️</button></div>`;
+  }
+  if (all.length > recentN) html += `<button class="btn sm" id="moreRecent" style="margin-top:10px">Show more</button>`;
+  $("recent").innerHTML = html;
+}
+let recentN = 12;
+$("recent").addEventListener("click", ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  if (b.id === "moreRecent") { recentN += 30; renderRecent(); return; }
+  const e = entries.find(x => x.id === (b.dataset.edit || b.dataset.del)); if (!e) return;
+  if (b.dataset.del) {
+    if (!confirm("Delete this entry?")) return;
+    upsert({ ...e, deleted: 1, updated: Date.now() }); renderAll(); pushSoon(); return;
+  }
+  if (e.type === "dose") addDrafts([{ kind: "dose", id: e.id, ts: e.ts, drug: e.drug, cls: e.cls, dose: e.dose, unit: e.unit, heard: e.heard }]);
+  else addDrafts([{ kind: "attack", id: e.id, ts: e.ts, severity: +e.severity || 0, symptoms: String(e.symptoms || "").split(", ").filter(Boolean),
+    triggers: String(e.triggers || "").split(", ").filter(Boolean), relief: e.relief || "", end: +e.end || 0, note: e.note || "", heard: e.heard }]);
+});
+
+// ---------- MY MEDICINES ----------
+function renderMeds() {
+  $("medList").innerHTML = meds().map((m, i) => `<div class="medrow">
+    <input data-m="${i}" data-k="name" value="${esc(m.name)}" placeholder="Name">
+    <select data-m="${i}" data-k="cls">${clsOptions(m.cls)}</select>
+    <input data-m="${i}" data-k="dose" type="number" step="any" value="${esc(m.dose ?? "")}" placeholder="dose">
+    <select data-m="${i}" data-k="unit">${UNITS.map(u => `<option ${u === m.unit ? "selected" : ""}>${u}</option>`).join("")}</select>
+    <button class="btn sm ghost" data-mdel="${i}" title="Remove">🗑️</button>
+    <input class="al" data-m="${i}" data-k="alias" value="${esc((m.alias || []).join(", "))}" placeholder="Other names: brand names, Bangla spelling…">
+  </div>`).join("");
+}
+$("medList").addEventListener("change", e => {
+  const i = +e.target.dataset.m, k = e.target.dataset.k; if (!k) return;
+  const m = medsDoc.list[i]; let v = e.target.value;
+  if (k === "dose") v = v === "" ? null : +v;
+  if (k === "alias") v = v.split(",").map(s => s.trim()).filter(Boolean);
+  if (k === "name" && !v.trim()) return renderMeds();
+  m[k] = v; saveMeds(true); pushSoon();
+});
+$("medList").addEventListener("click", e => {
+  const i = e.target.dataset.mdel; if (i === undefined) return;
+  if (!confirm(`Remove ${medsDoc.list[+i].name} from your list? (Past records stay.)`)) return;
+  medsDoc.list.splice(+i, 1); saveMeds(true); renderMeds(); pushSoon();
+});
+$("medAdd").onclick = () => { medsDoc.list.unshift({ name: "New medicine", cls: "other", dose: null, unit: "mg", str: [], alias: [] }); saveMeds(true); renderMeds(); };
+$("medReset").onclick = () => {
+  if (!confirm("Restore the default medicine list? Your own added medicines are kept.")) return;
+  const own = medsDoc.list.filter(m => !DEFAULT_MEDS.some(d => d.name === m.name));
+  medsDoc.list = [...DEFAULT_MEDS.map(m => ({ ...m })), ...own]; saveMeds(true); renderMeds(); pushSoon();
+};
+
+// ---------- SYNC (Google Sheet via Apps Script) ----------
+const syncOn = () => !!(sync.url && sync.key);
+const FIELDS = ["id", "type", "ts", "drug", "cls", "dose", "unit", "severity", "symptoms", "triggers", "relief", "end", "note", "heard", "updated", "deleted"];
+function scriptCode(key) {
+  return `// Med Log sync — paste this whole file into Extensions → Apps Script of your "Medicine Log" sheet.
+const KEY = "${key}";
+const HEAD = ["id","type","when","ts","drug","cls","dose","unit","severity","symptoms","triggers","relief","end","note","heard","updated","deleted"];
+
+function tab_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let s = ss.getSheetByName("Log");
+  if (!s) { s = ss.insertSheet("Log"); s.appendRow(HEAD); s.setFrozenRows(1); s.getRange(1, 1, 1, HEAD.length).setFontWeight("bold"); }
+  return s;
+}
+function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+
+function doGet(e) {
+  if ((e.parameter.key || "") !== KEY) return out_({ ok: false, error: "wrong key" });
+  const v = tab_().getDataRange().getValues(); const h = v.shift();
+  const rows = v.filter(r => r[0] !== "").map(r => { const o = {}; h.forEach((k, i) => o[k] = r[i] instanceof Date ? r[i].getTime() : r[i]); o.id = String(o.id); return o; });
+  return out_({ ok: true, rows: rows });
+}
+
+function doPost(e) {
+  const b = JSON.parse(e.postData.contents);
+  if (b.key !== KEY) return out_({ ok: false, error: "wrong key" });
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const s = tab_(); const v = s.getDataRange().getValues(); const h = v[0];
+    const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+    const idx = {}; for (let i = 1; i < v.length; i++) idx[String(v[i][0])] = i + 1;
+    (b.rows || []).forEach(o => {
+      o.when = o.ts ? Utilities.formatDate(new Date(Number(o.ts)), tz, "yyyy-MM-dd HH:mm") : "";
+      const row = h.map(k => { let x = o[k]; if (x === undefined || x === null) x = ""; if (typeof x === "string" && /^[=+\\-@]/.test(x)) x = "'" + x; return x; });
+      if (idx[o.id]) s.getRange(idx[o.id], 1, 1, row.length).setValues([row]);
+      else { s.appendRow(row); idx[o.id] = s.getLastRow(); }
+    });
+    return out_({ ok: true });
+  } finally { lock.releaseLock(); }
+}
+`;
+}
+function setPill(txt, on) { $("syncPill").textContent = txt; $("syncPill").classList.toggle("on", !!on); }
+function rowToEntry(r) {
+  const e = {}; FIELDS.forEach(k => e[k] = r[k] === undefined ? "" : r[k]);
+  e.id = String(e.id); e.ts = +e.ts; e.updated = +e.updated || 0; e.deleted = +e.deleted || 0;
+  if (e.dose !== "") e.dose = +e.dose; if (e.severity !== "") e.severity = +e.severity; e.end = e.end === "" ? "" : +e.end;
+  return e;
+}
+function entryToRow(e) { const r = {}; FIELDS.forEach(k => r[k] = e[k] === undefined ? "" : e[k]); return r; }
+let syncing = false, again = false, pushTimer = null;
+function pushSoon() { clearTimeout(pushTimer); pushTimer = setTimeout(syncNow, 800); }
+async function syncNow() {
+  if (!syncOn()) { setPill("☁️ not synced"); return; }
+  if (syncing) { again = true; return; }
+  syncing = true; setPill("☁️ syncing…", true);
+  try {
+    const r = await fetch(sync.url + "?key=" + encodeURIComponent(sync.key), { cache: "no-store" });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error === "wrong key" ? "The sheet's key doesn't match this device. Copy the setup code again, or open the phone link from your other device." : j.error);
+    const remote = new Map(j.rows.map(x => [String(x.id), x]));
+    const up = [];
+    // medicine list is stored as one special row
+    const rm = remote.get("medlist");
+    if (rm && +rm.updated > (medsDoc.updated || 0)) { try { medsDoc = { updated: +rm.updated, list: JSON.parse(rm.note) }; saveMeds(false); } catch (e) {} }
+    else if (!rm || (medsDoc.updated || 0) > +rm.updated) up.push({ id: "medlist", type: "config", ts: "", note: JSON.stringify(medsDoc.list), updated: medsDoc.updated || Date.now(), deleted: 0 });
+    remote.delete("medlist");
+    const local = new Map(entries.map(e => [e.id, e]));
+    for (const [id, r0] of remote) { const l = local.get(id); if (!l || +r0.updated > l.updated) local.set(id, rowToEntry(r0)); }
+    for (const [id, l] of local) { const r0 = remote.get(id); if (!r0 || l.updated > +r0.updated) up.push(entryToRow(l)); }
+    entries = [...local.values()]; saveEntries();
+    if (up.length) {
+      const p = await fetch(sync.url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ key: sync.key, rows: up }) });
+      const pj = await p.json(); if (!pj.ok) throw new Error(pj.error || "upload failed");
+    }
+    sync.last = Date.now(); store.set("ml_sync", sync);
+    setPill("☁️ synced " + fmtTime(sync.last), true);
+    $("syncMsg").textContent = `✅ Synced — ${live().length} records${up.length ? `, ${up.length} uploaded` : ""}.`;
+    $("phoneBox").classList.remove("hide"); $("syncState").textContent = "(on)";
+    renderAll(true);
+  } catch (err) {
+    setPill("☁️ offline — will retry");
+    $("syncMsg").textContent = "⚠️ " + (err.message && !/fetch|network|json/i.test(err.message) ? err.message : "Couldn't reach your Google Sheet. Saved on this device; it will sync later.");
+  } finally {
+    syncing = false; if (again) { again = false; pushSoon(); }
+  }
+}
+$("copyCode").onclick = async () => {
+  const code = scriptCode(sync.key);
+  try { await navigator.clipboard.writeText(code); $("copyCode").textContent = "✅ Copied"; }
+  catch (e) { $("codeBox").value = code; $("codeBox").classList.remove("hide"); $("codeBox").select(); $("copyCode").textContent = "Select all below and copy"; }
+};
+$("syncSave").onclick = () => {
+  const u = $("syncUrl").value.trim();
+  if (!/^https:\/\/script\.google(usercontent)?\.com\/.+\/exec/.test(u)) { $("syncMsg").textContent = "Please paste the full Web app URL — it starts with https://script.google.com/macros/s/ and ends with /exec"; return; }
+  sync.url = u; store.set("ml_sync", sync); syncNow();
+};
+$("syncNowBtn").onclick = syncNow;
+$("syncOff").onclick = () => {
+  if (!confirm("Turn off sync on this device? Your records stay here and in the sheet.")) return;
+  delete sync.url; store.set("ml_sync", sync); $("syncUrl").value = ""; $("syncState").textContent = "(off)"; $("phoneBox").classList.add("hide"); setPill("☁️ not synced");
+  $("syncMsg").textContent = "Sync turned off on this device.";
+};
+$("copyPhone").onclick = async () => {
+  const link = location.origin + location.pathname + "#setup=" + btoa(JSON.stringify({ u: sync.url, k: sync.key }));
+  try { await navigator.clipboard.writeText(link); $("copyPhone").textContent = "✅ Link copied — send it to your phone"; }
+  catch (e) { prompt("Copy this link and open it on your phone:", link); }
+};
+(function readSetupLink() {
+  const m = location.hash.match(/#setup=(.+)/); if (!m) return;
+  try { const o = JSON.parse(atob(decodeURIComponent(m[1]))); if (o.u && o.k) { sync.url = o.u; sync.key = o.k; store.set("ml_sync", sync); } } catch (e) {}
+  history.replaceState(null, "", location.pathname);
+  $("syncBox").open = true; $("syncMsg").textContent = "📱 Phone connected to your sheet — syncing…";
+})();
+$("syncUrl").value = sync.url || "";
+$("syncState").textContent = syncOn() ? "(on)" : "(off)";
+if (syncOn()) { $("phoneBox").classList.remove("hide"); $("syncSetup").querySelector("p").textContent = "Connected. To connect another device, use the phone link below."; }
+
+// ---------- START ----------
+function renderAll(fromSync) { renderMeters(); renderReport(); renderRecent(); if (!fromSync || !document.activeElement || !$("medList").contains(document.activeElement)) renderMeds(); }
+$("today").textContent = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+renderAll();
+syncNow();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(); });
+window.addEventListener("online", syncNow);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
