@@ -51,6 +51,11 @@
   details{font-size:14px}
   svg.ch{width:100%;height:120px;display:block}
   .empty{color:var(--muted);font-size:13px;padding:10px 0}
+  .fb h3{font-size:15px;margin:16px 0 6px}
+  .fb ul{padding-left:0;list-style:none;margin:4px 0}
+  .fb li{margin:6px 0;line-height:1.45}
+  .fb table{font-size:14px}
+  .tmpl{background:#eef3ff;border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px;line-height:1.6;font-size:14px}
 </style>
 </head>
 <body>
@@ -92,6 +97,7 @@
     <div id="player" style="margin-top:12px"></div>
     <h2 style="margin-top:16px">Coach's tips for tomorrow</h2>
     <ol class="tips" id="tips"></ol>
+    <div id="coach"></div>
     <details><summary>What I heard (transcript)</summary><p id="transcript"></p></details>
     <div class="row">
       <button class="btn" id="copyBtn">📋 Copy report (paste to Claude for deeper feedback)</button>
@@ -496,6 +502,8 @@ function analyse(text, secs){
   $("resTopic").textContent = topic;
   $("metrics").innerHTML = M.map(m=>`<div class="m"><div class="k">${m.k}</div><div class="v">${m.v}</div><span class="tag ${cls(m.s)}">${lab(m.s)}</span> <span class="sub">${m.note}</span></div>`).join("");
   $("tips").innerHTML = tips.map(t=>`<li>${t}</li>`).join("");
+  const fb = coachFeedback(text, topic, lang);
+  $("coach").innerHTML = fb.html;
   $("transcript").textContent = text || "(nothing recognised)";
   $("resCard").classList.remove("hide");
   window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
@@ -505,7 +513,7 @@ function analyse(text, secs){
                  metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text};
   history.unshift(entry); history = history.slice(0,200);
   saveLocal();
-  lastReport = makeReport(entry, tips);
+  lastReport = makeReport(entry, tips) + (fb.plain ? "\n\nCoach's feedback:\n" + fb.plain : "");
   renderHistory();
   pushEntry(entry);
 }
@@ -605,6 +613,138 @@ function renderProgress(){
   $("chartScore").innerHTML = svgLine(last.map(h=>h.overall), 0, 100, null, "#2f6fed");
   $("chartWpm").innerHTML = svgLine(last.map(h=>h.wpm), 60, 220, [120,160], "#d48a00");
   $("chartFill").innerHTML = svgLine(last.map(h=>h.fillers), 0, Math.max(10, ...last.map(h=>h.fillers)), null, "#d64545");
+}
+
+
+// ---------- COACH'S FEEDBACK (built-in, private: nothing leaves the app) ----------
+const esc = t => String(t).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const has = (t, re) => re.test(t);
+const FIXES_EN = [
+  [/\bmoved in (dhaka|rangpur|[a-z]+)\b/, "moved in Dhaka", "moved to Dhaka"],
+  [/\bcompleted (my )?[a-z]+ (degree |diploma |course )?from\b/, "completed my … from", "completed my … at"],
+  [/\b(root|rude|route) level\b/, "my root level is from…", "I'm originally from…"],
+  [/\bpassed out from\b/, "passed out from", "graduated from"],
+  [/\bsince \d+ (years|months)\b/, "since 5 years", "for 5 years"],
+  [/\bdiscuss about\b/, "discuss about", "discuss"],
+  [/\bexplain about\b/, "explain about", "explain"],
+  [/\bmention about\b/, "mention about", "mention"],
+  [/\breturn back\b/, "return back", "return"],
+  [/\brevert back\b/, "revert back", "reply / get back to you"],
+  [/\bvery much important\b/, "very much important", "very important"],
+  [/\bi am having\b/, "I am having (a degree / experience)", "I have"],
+  [/\bmyself (dr|doctor)\b/, "myself Dr …", "I'm Dr …"],
+  [/\bgood name\b/, "good name", "name"],
+  [/\bdo the needful\b/, "do the needful", "please take care of it"],
+  [/\bcousin (brother|sister)\b/, "cousin brother", "cousin"],
+  [/\bprepone\b/, "prepone", "bring forward"],
+  [/\bi mean\b/, "I mean", "(just pause)"],
+  [/\bbasically\b/, "basically", "(drop it)"],
+  [/\bactually\b/, "actually", "(drop it, unless correcting something)"],
+  [/\bintensifist\b/, "intensifist", "intensivist — say in-TEN-si-vist"],
+  [/\banesthesia\b/, "", ""]   // placeholder (no fix) – keeps list format simple
+].filter(f=>f[1]);
+const CONNECT_EN = [["after that",2],["and then",3],["okay",2],["so",4],["and also",3]];
+const LIGHT = new Set("am is are was have has had i'm i've".split(" "));
+
+function topicType(t){
+  t=(t||"").toLowerCase();
+  if(/introduce|পরিচয়/.test(t)) return "intro";
+  if(/explain|describe|বোঝান|বর্ণনা|কী তা/.test(t)) return "explain";
+  return "opinion";
+}
+function coachFeedback(text, topic, lang){
+  const t = " " + text.toLowerCase().replace(/[.,!?;:"'()।]/g," ").replace(/\s+/g," ") + " ";
+  const w = t.trim().split(" ").filter(Boolean);
+  if(w.length < 15) return {html:"", plain:""};
+  const en = lang==="en", type = topicType(topic);
+  const plain = [];
+
+  // --- 1. Structure checklist ---
+  const C = en ? {
+    greet:/\b(assalamu|salam|hello|good (morning|afternoon|evening)|hi everyone|welcome)\b/,
+    name:/\b(my name|i am dr|i'm dr|i am doctor|myself|dr [a-z]{3,})\b/,
+    role:/\b(anaesthe|anesthe|intensiv|intensif|doctor|consultant|trainee|specialist|physician|teacher)/,
+    cred:/\b(mbbs|fcps|diploma|fellowship|edaic|degree|experience|years)\b/,
+    benefit:/\b(you will|in this class|in these classes|today we|i will help|my goal|we will|you'll)\b/,
+    close:/\b(any question|questions|tell me|let's start|let us start|thank you|shall we)\b/,
+    reason:/\b(because|the reason|so that|that's why|therefore)\b/,
+    example:/\b(for example|for instance|such as|imagine|like when)\b/,
+    summary:/\b(so the main|main point|in summary|to sum up|in short|finally|to conclude|key point)\b/,
+    view:/\b(i think|i believe|in my view|in my opinion|i feel)\b/
+  } : {
+    greet:/(আসসালামু|সালাম|শুভ সকাল|শুভ সন্ধ্যা|স্বাগতম|নমস্কার)/,
+    name:/(আমার নাম|আমি ডাক্তার|আমি ডা)/,
+    role:/(অ্যানেস|এনেস|ডাক্তার|চিকিৎসক|বিশেষজ্ঞ|শিক্ষক|ট্রেইনি)/,
+    cred:/(এমবিবিএস|এফসিপিএস|ডিপ্লোমা|ফেলোশিপ|অভিজ্ঞতা|বছর)/,
+    benefit:/(তোমরা শিখবে|আপনারা শিখবেন|এই ক্লাসে|আজকে আমরা|আমার লক্ষ্য)/,
+    close:/(কোনো প্রশ্ন|প্রশ্ন|বলুন|বলো|ধন্যবাদ|শুরু করি)/,
+    reason:/(কারণ|কেননা|যেহেতু|এজন্য|তাই)/,
+    example:/(যেমন|উদাহরণ|ধরুন|ধরো)/,
+    summary:/(সংক্ষেপে|মূল কথা|সুতরাং|শেষে|অতএব|তাহলে)/,
+    view:/(আমি মনে করি|আমার মতে|আমার মনে হয়)/
+  };
+  const CHECK = {
+    intro:  [["greet","Greeting"],["name","Your name"],["role","Your current role"],["cred","2–3 key credentials"],["benefit","What the class will get from you"],["close","Closing line or question to the class"]],
+    explain:[["greet","Opening line (what you'll explain)"],["reason","Why it matters (because…)"],["example","A simple example"],["summary","A one-line summary at the end"]],
+    opinion:[["view","Clear opinion (I think… / In my view…)"],["reason","Reason (because…)"],["example","An example"],["summary","Conclusion (So… / In short…)"]]
+  }[type];
+  if(type==="explain") C.greet = en ? /\b(today i|i will explain|let me explain|i'll explain|i am going to)\b/ : /(আজকে আমি|আমি বোঝাব|আমি আলোচনা)/;
+  const items = CHECK.map(([k,label])=>({label, ok: has(t, C[k])}));
+  const done = items.filter(i=>i.ok).length;
+  let h = `<div class="fb"><h2 style="margin-top:18px">🧑‍🏫 Coach's feedback</h2>`;
+  h += `<h3>1. Structure — ${done} of ${items.length}</h3><ul>` + items.map(i=>`<li>${i.ok?"✅":"⬜"} ${i.label}</li>`).join("") + `</ul>`;
+  plain.push(`Structure ${done}/${items.length}: missing ` + (items.filter(i=>!i.ok).map(i=>i.label).join(", ")||"nothing"));
+
+  // --- 2. Clarity: restarts and overused phrases ---
+  const restarts = [];
+  for(let n=1;n<=3;n++) for(let i=0;i+2*n<=w.length;i++){
+    const a=w.slice(i,i+n).join(" "), b=w.slice(i+n,i+2*n).join(" ");
+    if(a===b && !(n===1 && w[i].length<2)) restarts.push(a);
+  }
+  const selfFix = (t.match(/\b(i am|i have|it is|this is) (my|the|a) (i am|i have|it is|this is)\b/g)||[]).length;
+  const ngram = {};
+  for(let n=2;n<=3;n++) for(let i=0;i+n<=w.length;i++){
+    const g=w.slice(i,i+n); if(g.every(x=>STOP[lang].has(x)||LIGHT.has(x))) continue;
+    const k=g.join(" "); ngram[k]=(ngram[k]||0)+1;
+  }
+  let overused = Object.entries(ngram).filter(([k,c])=> c >= (k.split(" ").length===3 ? 2 : 3)).sort((a,b)=>b[1]-a[1]);
+  overused = overused.filter(([k])=>!overused.some(([k2])=>k2!==k && k2.includes(k) && ngram[k2]===ngram[k]));
+  { const kept=[]; for(const o of overused){ const a=o[0].split(" ");
+      if(!kept.some(([k2])=>{ const b=k2.split(" "); return a.slice(0,-1).join(" ")===b.slice(1).join(" ") || b.slice(0,-1).join(" ")===a.slice(1).join(" "); })) kept.push(o); }
+    overused = kept.slice(0,4); }
+  const conn = en ? CONNECT_EN.map(([c,min])=>[c,(t.split(" "+c+" ").length-1),min]).filter(([c,n,min])=>n>=min) : [];
+  const cl = [];
+  if(restarts.length || selfFix) cl.push(`You restarted or repeated yourself ${restarts.length+selfFix} time(s)${restarts.length?` (“${esc(restarts.slice(0,2).join("”, “"))}”)`:""}. Before each sentence, pause, decide the whole sentence, then say it — a silent pause sounds better than a restart.`);
+  overused = overused.filter(([k])=>!(en && conn.some(([c])=>(" "+k+" ").includes(" "+c+" "))));
+  overused.forEach(([k,c])=> cl.push(`You said “${esc(k)}” ${c} times. Say it once, then use a different phrase.`));
+  conn.forEach(([c,n])=> cl.push(`“${c}” ×${n} — vary your linking words: <i>then, later, since 2021, as a result, next</i>.`));
+  if(!cl.length) cl.push("Clear delivery — no restarts or overused phrases. 👍");
+  h += `<h3>2. Clarity</h3><ul>` + cl.map(x=>`<li>• ${x}</li>`).join("") + `</ul>`;
+  plain.push("Clarity: " + cl.map(x=>x.replace(/<[^>]+>/g,"")).join(" | "));
+
+  // --- 3. Word choice ---
+  if(en){
+    const fx = FIXES_EN.filter(([re])=>re.test(t)).slice(0,6);
+    h += `<h3>3. Word choice</h3>`;
+    if(fx.length){
+      h += `<table><tr><th>You said</th><th>Better</th></tr>` + fx.map(([,a,b])=>`<tr><td>${esc(a)}</td><td><b>${esc(b)}</b></td></tr>`).join("") + `</table>`;
+      plain.push("Word choice: " + fx.map(([,a,b])=>`${a} → ${b}`).join("; "));
+    } else h += `<ul><li>• No common word-choice mistakes found. 👍</li></ul>`;
+  }
+
+  // --- 4. Template for tomorrow ---
+  const T = en ? {
+    intro: "Assalamu Alaikum, everyone. I'm Dr. ___, a ___. I'm originally from ___, where I ___. For the last ___ years, I've worked at ___, and I'm currently ___. In these classes, my goal is to help you ___. So, before we start — ___?",
+    explain: "Today I'll explain ___. Put simply, ___. This matters because ___. For example, ___. So the key point to remember is ___.",
+    opinion: "In my view, ___. The main reason is ___. For example, ___. Another point is ___. So, in short, ___."
+  }[type] : {
+    intro: "আসসালামু আলাইকুম। আমি ডা. ___, একজন ___। আমি ___ থেকে এসেছি। গত ___ বছর ধরে আমি ___ এ কাজ করছি। এই ক্লাসে আমার লক্ষ্য হলো ___। শুরু করার আগে বলুন — ___?",
+    explain: "আজকে আমি ___ বোঝাব। সহজ কথায়, ___। এটা জরুরি কারণ ___। যেমন, ___। তাহলে মূল কথা হলো ___।",
+    opinion: "আমার মতে, ___। প্রধান কারণ হলো ___। যেমন, ___। আরেকটি বিষয় হলো ___। সংক্ষেপে, ___।"
+  }[type];
+  h += `<h3>${en?"4":"3"}. Try this shape tomorrow</h3><div class="tmpl">${esc(T)}</div></div>`;
+  plain.push("Template: " + T);
+  return {html:h, plain:plain.join("\n")};
 }
 
 let lastReport="";
