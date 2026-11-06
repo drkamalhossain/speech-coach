@@ -255,6 +255,7 @@ const PHONE_MODE = isAndroid;   // Android can't share the mic between recording
 if(PHONE_MODE) document.getElementById("listenWrap").classList.remove("hide");
 let listenOnly=false;
 let recording=false, rec=null, stream=null, ctx=null, analyser=null, tick=null, startT=0;
+let bnCode="bn-BD";
 let sessionFinal="", finalText="", interimText="", frames=[], recErr="", speechMarks=[], mediaRec=null, chunks=[], audioURL=null;
 
 async function start(){
@@ -289,7 +290,7 @@ async function start(){
   }, FRAME_MS);
 }
 function startRecognition(){
-  rec = new SR(); rec.lang = lang==="en" ? "en-IN" : "bn-BD";   // Indian English suits South Asian accents
+  rec = new SR(); rec.lang = lang==="en" ? "en-IN" : bnCode;   // Indian English suits South Asian accents
   rec.continuous = true; rec.interimResults = true;
   rec.onresult = ev=>{
     // rebuild this listening session's text from all results (Android re-sends growing text)
@@ -315,9 +316,13 @@ function startRecognition(){
     if(e.error==="not-allowed") alert2("Microphone is blocked for this site. Tap the 🔒 next to the address → Permissions → Microphone → Allow.");
     else if(e.error==="network") alert2("Word recognition needs internet. Check your connection.");
     else if(e.error==="audio-capture") alert2("Another app is using the microphone. Close it and try again.");
-    else if(e.error==="language-not-supported") alert2("This language isn't available on this device's speech service.");
+    else if(e.error==="language-not-supported"){
+      if(lang==="bn" && bnCode==="bn-BD"){ bnCode="bn-IN"; recErr=""; }   // fall back to Indian Bangla model; restarts on end
+      else alert2("This language isn't available on this device's speech service.");
+    }
   };
   rec.onend = ()=>{
+    if(recording && rec.lang!==(lang==="en"?"en-IN":bnCode)){ sessionFinal=""; interimText=""; startRecognition(); return; }
     finalText += " " + sessionFinal + (interimText ? " " + interimText : ""); sessionFinal=""; interimText="";
     if(PHONE_MODE) $("lvl").style.width="0"; if(recording){ try{ rec.start(); }catch(e){} } };
   try{ rec.start(); }catch(e){ recErr = "start-failed"; }
