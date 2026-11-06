@@ -510,7 +510,7 @@ function analyse(text, secs){
 
   // --- save ---
   const entry = {id:newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long2,
-                 metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text};
+                 metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text, tips};
   history.unshift(entry); history = history.slice(0,200);
   saveLocal();
   lastReport = makeReport(entry, tips) + (fb.plain ? "\n\nCoach's feedback:\n" + fb.plain : "");
@@ -762,7 +762,27 @@ function renderHistory(){
   renderProgress();
   if(!history.length) return;
   $("history").innerHTML = `<table><tr><th>Date</th><th>Lang</th><th>Score</th><th>WPM</th><th>Fillers</th><th>Long pauses</th></tr>`+
-    history.slice(0,10).map(h=>`<tr><td>${new Date(h.date).toLocaleDateString()}</td><td>${h.lang.toUpperCase()}</td><td><b>${h.overall}</b></td><td>${h.wpm}</td><td>${h.fillers}</td><td>${h.longPauses}</td></tr>`).join("")+`</table>`;
+    history.slice(0,30).map(h=>`<tr class="hrow" data-id="${esc(h.id)}" style="cursor:pointer"><td>${new Date(h.date).toLocaleDateString()} <span class="sub">${new Date(h.date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span></td><td>${h.lang.toUpperCase()}</td><td><b>${h.overall}</b></td><td>${h.wpm}</td><td>${h.fillers}</td><td>${h.longPauses}</td></tr>`).join("")+`</table><div class="sub" style="margin-top:6px">👆 Tap any session to see its full score card.</div>`;
+  document.querySelectorAll(".hrow").forEach(r=>r.onclick=()=>{
+    const h = history.find(x=>String(x.id)===r.dataset.id); if(h) showSession(h);
+  });
+}
+// reopen the full score card of a past session
+function showSession(h){
+  const cls = s=> s>=80?"g":s>=55?"o":"b", lab = s=> s>=80?"Good":s>=55?"Okay":"Work on";
+  const ms = Array.isArray(h.metrics) ? h.metrics : [];
+  $("ring").textContent = h.overall; $("ring").className = "ring " + cls(h.overall);
+  $("verdict").textContent = "Session of " + new Date(h.date).toLocaleString([], {dateStyle:"medium", timeStyle:"short"});
+  $("resTopic").textContent = h.topic || "";
+  $("metrics").innerHTML = ms.map(m=>`<div class="m"><div class="k">${esc(m.k)}</div><div class="v">${esc(m.v)}</div><span class="tag ${cls(m.s)}">${lab(m.s)}</span></div>`).join("");
+  $("tips").innerHTML = (h.tips||[]).map(t=>`<li>${t}</li>`).join("") || `<li class="sub">Tips weren't saved for this older session.</li>`;
+  const fb = coachFeedback(h.transcript||"", h.topic, h.lang);
+  $("coach").innerHTML = fb.html;
+  $("transcript").textContent = h.transcript || "(no transcript)";
+  $("player").innerHTML = `<div class="sub">🕘 Past session — recordings are never kept.</div>`;
+  lastReport = makeReport(h, h.tips||[]) + (fb.plain ? "\n\nCoach's feedback:\n" + fb.plain : "");
+  $("resCard").classList.remove("hide");
+  window.scrollTo({top:$("resCard").offsetTop-10, behavior:"smooth"});
 }
 
 renderTopics(); renderHistory(); syncAll();
