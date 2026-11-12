@@ -118,6 +118,8 @@
       <input type="text" class="grow" id="typed" placeholder="…or type it here, e.g. zolmitriptan 2.5 at 7 pm">
       <button class="btn" id="typedGo">Add</button>
     </div>
+    <div class="sub" style="margin-top:12px">One-tap — your usual medicines:</div>
+    <div class="chips" id="quick" style="margin-top:6px"></div>
     <div class="row" style="margin-top:10px">
       <button class="btn sm" id="addDose">+ Medicine (manual)</button>
       <button class="btn sm" id="addAttack">+ Migraine attack (manual)</button>
@@ -227,6 +229,23 @@ const live = () => entries.filter(e => !e.deleted);
 const meds = () => medsDoc.list;
 const medBy = name => meds().find(m => m.name.toLowerCase() === String(name || "").trim().toLowerCase());
 function saveEntries() { store.set("ml_entries", entries); }
+// keep your list up to date with new built-in names/spellings (your own changes are kept)
+function upgradeMeds() {
+  let changed = false;
+  const tv = medsDoc.list.findIndex(m => m.name.toLowerCase() === "topirva");
+  if (tv >= 0 && medsDoc.list.some(m => m.name === "Topiramate")) {
+    medsDoc.list.splice(tv, 1); changed = true;
+    entries.forEach(e => { if (e.drug === "Topirva") { e.drug = "Topiramate"; e.cls = "preventive"; e.updated = Date.now(); } }); saveEntries();
+  }
+  for (const d of DEFAULT_MEDS) {
+    const m = medsDoc.list.find(x => x.name === d.name);
+    if (!m) continue;
+    const add = d.alias.filter(a => !(m.alias || []).includes(a));
+    if (add.length) { m.alias = [...(m.alias || []), ...add]; changed = true; }
+  }
+  if (changed) saveMeds(true);
+}
+if (!(sync.url && sync.key)) upgradeMeds();   // with sync on, this runs after the first sync so newer phone changes aren't overwritten
 function saveMeds(touch) { if (touch) medsDoc.updated = Date.now(); store.set("ml_meds", medsDoc); }
 
 // ---------- SPEECH ----------
@@ -240,28 +259,28 @@ $("mic").onclick = () => {
   if (!SR) { $("status").textContent = "Voice isn't supported in this browser. Please open the app in Google Chrome, or type below."; return; }
   if (listening) { rec && rec.stop(); return; }
   rec = new SR();
-  rec.lang = lang; rec.interimResults = true; rec.maxAlternatives = 4; rec.continuous = false;
-  let finalAlts = null;
-  rec.onstart = () => { listening = true; $("mic").classList.add("rec"); $("micLbl").textContent = "Listening… tap to stop"; $("status").textContent = "Speak now"; $("live").textContent = ""; };
+  rec.lang = lang; rec.interimResults = true; rec.maxAlternatives = 5; rec.continuous = true;
+  let results = [], silence = null;
+  const quietStop = ms => { clearTimeout(silence); silence = setTimeout(() => rec && rec.stop(), ms); };
+  rec.onstart = () => { listening = true; $("mic").classList.add("rec"); $("micLbl").textContent = "Listening… tap when done"; $("status").textContent = "Speak now — take your time"; $("live").textContent = ""; quietStop(8000); };
   rec.onresult = ev => {
-    let txt = "";
-    for (let i = 0; i < ev.results.length; i++) txt += ev.results[i][0].transcript + " ";
-    $("live").textContent = txt.trim();
-    const last = ev.results[ev.results.length - 1];
-    if (last.isFinal) {
-      // build every combination of alternatives for the final phrase and keep the one we understand best
-      const prefix = [...ev.results].slice(0, -1).map(r => r[0].transcript).join(" ");
-      finalAlts = [...last].map(a => (prefix + " " + a.transcript).trim());
-    }
+    results = [...ev.results];
+    $("live").textContent = results.map(r => r[0].transcript).join(" ").trim();
+    quietStop(2500);   // stop by itself after 2.5 s of quiet
   };
   rec.onerror = e => {
     $("status").textContent = e.error === "not-allowed" ? "Microphone blocked — allow the microphone for this site in Chrome settings."
-      : e.error === "no-speech" ? "Didn't hear anything. Tap and try again." : e.error === "network" ? "Voice needs internet. Please type instead." : "Voice error: " + e.error;
+      : e.error === "no-speech" ? "Didn't hear anything. Tap and try again." : e.error === "network" ? "Voice needs internet. Please type instead." : e.error === "aborted" ? "" : "Voice error: " + e.error;
   };
   rec.onend = () => {
+    clearTimeout(silence);
     listening = false; $("mic").classList.remove("rec"); $("micLbl").textContent = "Tap to speak";
-    const alts = finalAlts || ($("live").textContent ? [$("live").textContent] : []);
-    if (alts.length) handleText(alts);
+    if (!results.length) return;
+    // try each alternative of each phrase (others kept at their best guess) and keep the version we understand best
+    const base = results.map(r => r[0].transcript);
+    const alts = [base.join(" ")];
+    results.forEach((r, i) => { for (let k = 1; k < r.length; k++) { const c = base.slice(); c[i] = r[k].transcript; alts.push(c.join(" ")); } });
+    handleText(alts);
   };
   try { rec.start(); } catch (e) { $("status").textContent = "Couldn't start the microphone. Try again."; }
 };
@@ -281,6 +300,24 @@ $("typedGo").onclick = () => { const v = $("typed").value.trim(); if (v) { handl
 $("typed").addEventListener("keydown", e => { if (e.key === "Enter") $("typedGo").onclick(); });
 $("addDose").onclick = () => addDrafts([{ kind: "dose", ts: Date.now(), drug: "", cls: "other", dose: "", unit: "mg" }]);
 $("addAttack").onclick = () => addDrafts([{ kind: "attack", ts: Date.now(), severity: 5, symptoms: [], triggers: [], relief: "", end: 0, note: "" }]);
+
+// ---------- QUICK ADD ----------
+function renderQuick() {
+  const since = Date.now() - 60 * DAY, cnt = {}, doses = {};
+  for (const e of live()) if (e.type === "dose" && e.ts >= since) {
+    cnt[e.drug] = (cnt[e.drug] || 0) + 1;
+    const k = e.dose + " " + e.unit; (doses[e.drug] = doses[e.drug] || {})[k] = ((doses[e.drug] || {})[k] || 0) + 1;
+  }
+  let names = Object.keys(cnt).filter(n => medBy(n)).sort((a, b) => cnt[b] - cnt[a]).slice(0, 6);
+  for (const d of ["Topiramate", "Paracetamol", "Zolmitriptan", "Tolfenamic acid"]) if (names.length < 4 && !names.includes(d) && medBy(d)) names.push(d);
+  const pick = n => { const m = medBy(n), o = doses[n]; if (!o) return { dose: m.dose, unit: m.unit };
+    const [d, u] = Object.entries(o).sort((a, b) => b[1] - a[1])[0][0].split(" "); return { dose: d === "" ? m.dose : +d, unit: u || m.unit }; };
+  $("quick").innerHTML = names.map(n => { const p = pick(n); return `<span class="chip" data-q="${esc(n)}" data-d="${esc(p.dose)}" data-u="${esc(p.unit)}">💊 ${esc(n)} ${esc(p.dose ?? "")} ${esc(p.unit)}</span>`; }).join("");
+}
+$("quick").addEventListener("click", e => {
+  const c = e.target.closest("[data-q]"); if (!c) return; const m = medBy(c.dataset.q);
+  addDrafts([{ kind: "dose", ts: Date.now(), drug: m.name, cls: m.cls, dose: c.dataset.d === "" ? "" : +c.dataset.d, unit: c.dataset.u }]);
+});
 
 // ---------- DRAFTS ----------
 const SYMS = ["Aura", "Nausea/vomiting", "Light sensitivity", "Sound sensitivity"];
@@ -350,10 +387,10 @@ $("drafts").addEventListener("input", e => {
   if (f === "severity") { v = +v; $("sv" + i).textContent = v; drafts[i].sevGuessed = false; }
   if (f === "dose") v = v === "" ? "" : +v;
   drafts[i][f] = v;
-  if (f === "drug") { const m = medBy(v); if (m) { drafts[i].cls = m.cls; drafts[i].unit = m.unit; if (drafts[i].dose === "" || drafts[i].dose == null) drafts[i].dose = m.dose; renderDrafts(); } }
+  if (f === "drug") { const m = medBy(v); if (m) { drafts[i].cls = m.cls; drafts[i].unit = m.unit; if (drafts[i].dose === "" || drafts[i].dose == null) drafts[i].dose = m.dose; } }
   if (f === "ts") drafts[i].timeGuessed = false;
 });
-$("drafts").addEventListener("change", e => { if (e.target.dataset.f === "drug" || e.target.dataset.f === "relief") renderDrafts(); });
+$("drafts").addEventListener("change", e => { if (e.target.dataset.f === "drug" || e.target.dataset.f === "relief") setTimeout(renderDrafts, 0); });
 $("drafts").addEventListener("click", e => {
   const rm = e.target.dataset.rm; if (rm !== undefined) { drafts.splice(+rm, 1); renderDrafts(); return; }
   const c = e.target.dataset.chip; if (c) { const d = drafts[+e.target.dataset.i]; const v = e.target.dataset.v;
@@ -367,6 +404,11 @@ $("saveDrafts").onclick = () => {
       const name = String(d.drug || "").trim(); if (!name) continue;
       let m = medBy(name);
       if (!m) { m = { name, cls: d.cls, dose: d.dose === "" ? null : d.dose, unit: d.unit, str: [], alias: [] }; medsDoc.list.push(m); saveMeds(true); }
+      // learn: if the phone misheard the name and you corrected it, remember what it heard
+      if (d.guess && d.guess.toLowerCase() !== m.name.toLowerCase() && !(m.alias || []).includes(d.guess.toLowerCase())) {
+        m.alias = [...(m.alias || []), d.guess.toLowerCase()]; saveMeds(true);
+        $("status").textContent = `✅ Saved. I'll recognise “${d.guess}” as ${m.name} from now on.`;
+      }
       upsert({ id: d.id || newId(), type: "dose", ts: d.ts, drug: m.name, cls: d.cls || m.cls, dose: d.dose === "" ? "" : d.dose, unit: d.unit, heard: d.heard || "", updated: now, deleted: 0 });
     } else if (d.kind === "attack") {
       upsert({ id: d.id || newId(), type: "attack", ts: d.ts, severity: d.severity, symptoms: d.symptoms.join(", "), triggers: d.triggers.join(", "),
@@ -377,7 +419,7 @@ $("saveDrafts").onclick = () => {
     }
   }
   drafts = []; renderDrafts();
-  $("status").textContent = "✅ Saved."; $("live").textContent = "";
+  if (!/recognise/.test($("status").textContent)) $("status").textContent = "✅ Saved."; $("live").textContent = "";
   renderAll(); notifyOveruse(before);
   pushSoon();
 };
@@ -728,7 +770,7 @@ $("syncState").textContent = syncOn() ? "(on)" : "(off)";
 if (syncOn()) { $("phoneBox").classList.remove("hide"); $("syncSetup").querySelector("p").textContent = "Connected. To connect another device, use the phone link below."; }
 
 // ---------- START ----------
-function renderAll(fromSync) { renderMeters(); renderReport(); renderRecent(); if (!fromSync || !document.activeElement || !$("medList").contains(document.activeElement)) renderMeds(); }
+function renderAll(fromSync) { if (fromSync) upgradeMeds(); renderQuick(); renderMeters(); renderReport(); renderRecent(); if (!fromSync || !document.activeElement || !$("medList").contains(document.activeElement)) renderMeds(); }
 $("today").textContent = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 renderAll();
 syncNow();

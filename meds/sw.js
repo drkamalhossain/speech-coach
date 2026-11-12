@@ -1,5 +1,5 @@
 // Med Log offline helper: newest version first, saved copy when offline. Never touches Google Sheet sync.
-const CACHE = "med-log-v1";
+const CACHE = "med-log-v2";
 const FILES = ["./", "./index.html", "./parser.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", e => { e.waitUntil(self.clients.claim()); });

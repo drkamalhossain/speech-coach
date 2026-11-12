@@ -17,7 +17,7 @@ const CLASSES = {
 
 // name, class, default dose, unit, common strengths, aliases (English, brand, Bangla spellings the phone may type)
 const DEFAULT_MEDS = [
-  ["Topiramate", "preventive", 25, "mg", [25, 50, 100], "topiramate topamax টপিরামেট টোপিরামেট টপিরামিট টোপিরামিট টপিরামেইট"],
+  ["Topiramate", "preventive", 25, "mg", [25, 50, 100], "topiramate|topamax|topirva|topiramet|to fever|to fir|to pyramid|to fir amit|operamit|টপিরামেট|টোপিরামেট|টপিরামিট|টোপিরামিট|টপিরামেইট|টপিরভা"],
   ["Propranolol", "preventive", 10, "mg", [10, 20, 40, 80], "propranolol propanolol indever প্রোপ্রানোলল প্রপ্রানোলল প্রোপ্রানোলোল প্রপ্রানোলোল প্রোপানোলল প্রপানোলল ইনডেভার"],
   ["Paracetamol", "paracetamol", 500, "mg", [500, 665, 1000], "paracetamol parasitamol acetaminophen napa ace প্যারাসিটামল প্যারাসিটামোল প্যারাসিটামেল পেরাসিটামল প্যারাসিটামাল নাপা এইস"],
   ["Tolfenamic acid", "nsaid", 200, "mg", [100, 200], "tolfenamic|tolfenamic acid|tufnil|টলফেনামিক|টোলফেনামিক|টলফেনামিক এসিড|টলফেনামিক অ্যাসিড|টাফনিল"],
@@ -38,13 +38,14 @@ const DEFAULT_MEDS = [
   ["Esomeprazole", "ppi", 20, "mg", [20, 40], "esomeprazole sergel ইসোমিপ্রাজল এসোমিপ্রাজল ইসোমিপ্রাজোল সার্জেল"],
   ["Pantoprazole", "ppi", 40, "mg", [20, 40], "pantoprazole প্যান্টোপ্রাজল প্যান্টোপ্রাজোল"],
   ["Rabeprazole", "ppi", 20, "mg", [20], "rabeprazole র‍্যাবিপ্রাজল রেবিপ্রাজল"],
-  ["Fexofenadine", "antihistamine", 120, "mg", [60, 120, 180], "fexofenadine fexo ফেক্সোফেনাডিন ফেক্সো"],
+  ["Fexofenadine", "antihistamine", 120, "mg", [60, 120, 180], "fexofenadine|fexo|fexofenadin|phenadin|fenned in|fexofen|ফেক্সোফেনাডিন|ফেক্সো"],
   ["Cetirizine", "antihistamine", 10, "mg", [10], "cetirizine সেটিরিজিন"],
   ["Desloratadine", "antihistamine", 5, "mg", [5], "desloratadine ডেসলোরাটাডিন"],
   ["Rupatadine", "antihistamine", 10, "mg", [10], "rupatadine রুপাটাডিন"],
   ["Montelukast", "asthma", 10, "mg", [10], "montelukast monas মন্টিলুকাস্ট মন্টেলুকাস্ট মোন্টেলুকাস্ট মোনাস"],
   ["Salbutamol inhaler", "asthma", 2, "puff", [1, 2], "salbutamol ventolin সালবিউটামল সালবুটামল ভেন্টোলিন"],
-  ["Doxofylline", "asthma", 400, "mg", [200, 400], "doxofylline ডক্সোফাইলিন"]
+  ["Doxofylline", "asthma", 400, "mg", [200, 400], "doxofylline ডক্সোফাইলিন"],
+  ["Clonazepam", "other", 0.25, "mg", [0.25, 0.5, 1, 2], "clonazepam rivotril clonapam ক্লোনাজেপাম ক্লোনাজিপাম"]
 ].map(([name, cls, dose, unit, str, al]) => ({
   name, cls, dose, unit, str,
   alias: (al.includes("|") ? al.split("|") : al.split(" ")).map(s => s.trim()).filter(Boolean)
@@ -98,6 +99,15 @@ function lev(a, b) {
   }
   return prev[n];
 }
+// sound-alike skeleton for English: "to fir amit" ≈ "operamit" ≈ "topiramate"
+function csk(w) {
+  return String(w).toLowerCase().replace(/[^a-z]/g, "").replace(/ph/g, "f").replace(/x/g, "ks")
+    .replace(/[fv]/g, "p").replace(/d/g, "t").replace(/[cqk]/g, "k").replace(/z/g, "s")
+    .replace(/[aeiouyhw]/g, "").replace(/(.)\1+/g, "$1");
+}
+const STOP = new Set(["tablet", "tablets", "tab", "taken", "took", "take", "has", "have", "had", "i", "yesterday", "today", "night", "morning",
+  "evening", "afternoon", "at", "and", "also", "the", "a", "of", "mg", "milligram", "milligrams", "times", "time", "two", "one", "after",
+  "before", "with", "in", "on", "is", "was", "my", "me", "last", "this", "now", "just", "half"]);
 const allowed = L => (L < 5 ? 0 : L < 8 ? 1 : 2);
 
 const B = "(?:^|\\s)", E = "(?=\\s|$)";
@@ -149,8 +159,8 @@ function parseTime(s, now) {
     [rx(B + "(" + PER_ALT + ")" + SUF + "\\s*(সাড়ে|সোয়া|পৌনে)?\\s*(\\d{1,2})(?:[:.](\\d{2}))?\\s*(?:(?:টায়|টার|টা|বাজে|o'clock|oclock)(?:\\s*(?:সময়|দিকে|নাগাদ))?)?\\s*(am|pm|a\\.m\\.|p\\.m\\.)?" + NOT_DOSE),
       x => ({ per: PERIOD[x[1]], p: x[2], h: +x[3], m: +(x[4] || 0), ap: x[5] })],
     // 8:30 pm / সাড়ে 8:00
-    [rx(B + "(সাড়ে|সোয়া|পৌনে)?\\s*(\\d{1,2})[:.](\\d{2})\\s*(am|pm|a\\.m\\.|p\\.m\\.)?" + E),
-      x => ({ p: x[1], h: +x[2], m: +x[3], ap: x[4] })],
+    [rx(B + "(সাড়ে|সোয়া|পৌনে)?\\s*(\\d{1,2})(?::(\\d{2})\\s*(am|pm|a\\.m\\.|p\\.m\\.)?|\\.(\\d{2})\\s*(am|pm|a\\.m\\.|p\\.m\\.))" + E),
+      x => ({ p: x[1], h: +x[2], m: +(x[3] || x[5]), ap: x[4] || x[6] })],
     // 8 pm
     [rx(B + "(\\d{1,2})\\s*(am|pm|a\\.m\\.|p\\.m\\.|এএম|পিএম)" + E), x => ({ h: +x[1], ap: x[2] })],
     // ৮টায় / সাড়ে ৮টা / 9 o'clock
@@ -247,7 +257,7 @@ const FILLER = new Set(["খেলাম", "খেয়েছি", "খাই�
 function prepMeds(meds) {
   return meds.map(md => {
     const al = [md.name, ...(md.alias || [])].map(a => norm(a)).filter(Boolean);
-    return { md, al: [...new Set(al)].map(a => ({ toks: a.split(" "), sk: skel(a.replace(/\s+/g, "")), raw: a.replace(/\s+/g, "") })) };
+    return { md, al: [...new Set(al)].map(a => ({ toks: a.split(" "), sk: skel(a.replace(/\s+/g, "")), raw: a.replace(/\s+/g, ""), cs: /^[a-z ]+$/.test(a) ? csk(a) : "" })) };
   });
 }
 
@@ -258,19 +268,22 @@ function findMeds(tokens, prepped) {
     let best = null;
     for (const p of prepped) for (const a of p.al) {
       const n = a.toks.length;
-      const tries = n > 1 ? [n] : [1, 2];
+      const tries = n > 1 ? [n] : [1, 2, 3];
       for (const span of tries) {
         if (i + span > tokens.length) continue;
         const part = tokens.slice(i, i + span);
-        if (part.some(x => /\d/.test(x))) continue;
+        if (part.some(x => /\d/.test(x) || STOP.has(x))) continue;
         const cand = part.join("");
-        let d;
+        let d = null;
         if (cand === a.raw) d = 0;
         else {
           const L = a.sk.length, al = allowed(L);
-          if (!al) continue;
-          d = lev(skel(cand), a.sk); if (d > al) continue;
-          if (Math.abs(cand.length - a.raw.length) > 4) continue;
+          if (al) { const x = lev(skel(cand), a.sk); if (x <= al && Math.abs(cand.length - a.raw.length) <= 4) d = x; }
+          if (d === null && a.cs.length >= 4 && /^[a-z]+$/.test(cand)) {
+            const c = csk(cand), x = lev(c, a.cs);
+            if (c.length >= 3 && x <= (a.cs.length >= 6 ? 2 : 1)) d = 1.5 + x;
+          }
+          if (d === null) continue;
         }
         const score = d * 10 + (n > 1 ? -span : span) * 0.5 - a.raw.length / 100;
         if (!best || score < best.score) best = { md: p.md, start: i, end: i + span, score, dist: d };
@@ -358,11 +371,11 @@ function parse(text, meds, now) {
     // nothing recognised: keep the words as a new medicine name so it can be fixed and saved
     const tokens = parts.flatMap(p => p.tokens);
     const seen = new Set();
-    const words = tokens.filter(w => !/^\d/.test(w) && !FILLER.has(w) && !UNIT_MG.has(w) && !COUNT.has(w) && !seen.has(w) && seen.add(w));
+    const words = tokens.filter(w => !/^\d/.test(w) && !FILLER.has(w) && !STOP.has(w) && !UNIT_MG.has(w) && !COUNT.has(w) && !seen.has(w) && seen.add(w));
     if (words.length) {
       const name = words.slice(0, 2).join(" ").replace(/(^|\s)\S/g, c => c.toUpperCase());
       const d = readDose(tokens, { dose: null, unit: "mg", str: [] });
-      items.push({ kind: "dose", ts: gTime.ts, drug: name, cls: "other", dose: d.dose, unit: d.unit || "mg", heard, unknown: true, timeGuessed: !gTime.found || gTime.guessed });
+      items.push({ kind: "dose", ts: gTime.ts, drug: name, cls: "other", dose: d.dose, unit: d.unit || "mg", heard, unknown: true, guess: words.slice(0, 3).join(" "), timeGuessed: !gTime.found || gTime.guessed });
     }
   }
   return items;
