@@ -56,6 +56,15 @@
   .fb li{margin:6px 0;line-height:1.45}
   .fb table{font-size:14px}
   .tmpl{background:#eef3ff;border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px;line-height:1.6;font-size:14px}
+  .vopt{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px;font-size:14px}
+  .vopt label{cursor:pointer}
+  .cam{position:relative;width:200px;max-width:60%;margin:0 auto 10px;border-radius:12px;overflow:hidden;background:#111;aspect-ratio:4/3}
+  .cam video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block}
+  .cam.tiny{position:absolute;width:2px;height:2px;opacity:0;pointer-events:none;margin:0}
+  .cam .eye{position:absolute;left:6px;top:6px;font-size:12px;font-weight:600;color:#fff;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:20px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:#999;vertical-align:middle}
+  .vres{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  #player video{width:100%;max-height:360px;border-radius:10px;background:#000;transform:scaleX(-1)}
 </style>
 </head>
 <body>
@@ -81,6 +90,12 @@
   <div class="card" id="recCard">
     <h2>2. Speak for 1 minute</h2>
     <div class="sub" id="chosenTopic">Choose a topic above.</div>
+    <div class="vopt">
+      <label><input type="checkbox" id="videoMode"> 🎥 Video mode — also coach my eye contact &amp; body language</label>
+      <label id="hidePrevWrap" class="hide"><input type="checkbox" id="hidePrev"> Hide my picture while speaking (helps you look at the lens)</label>
+    </div>
+    <div id="vidStatus" class="sub hide" style="margin-bottom:8px"></div>
+    <div class="cam hide" id="cam"><video id="camVid" playsinline muted></video><div class="eye" id="eyeBadge"><span class="dot" id="eyeDot"></span>Eye contact</div></div>
     <div class="timer" id="timer">1:00</div>
     <div class="meter"><i id="lvl"></i></div>
     <div style="height:12px"></div>
@@ -98,6 +113,7 @@
     <h2 style="margin-top:16px">Coach's tips for tomorrow</h2>
     <ol class="tips" id="tips"></ol>
     <div id="coach"></div>
+    <div id="vidRes"></div>
     <details><summary>What I heard (transcript)</summary><p id="transcript"></p></details>
     <div class="row">
       <button class="btn" id="copyBtn">📋 Copy report (paste to Claude for deeper feedback)</button>
@@ -114,6 +130,7 @@
     <div class="k sub">Overall score</div><div id="chartScore"></div>
     <div class="k sub" style="margin-top:10px">Speed (wpm) — green band = ideal 120–160</div><div id="chartWpm"></div>
     <div class="k sub" style="margin-top:10px">Filler words per session</div><div id="chartFill"></div>
+    <div id="eyeChartWrap" class="hide"><div class="k sub" style="margin-top:10px">🎥 Eye contact % (video sessions) — green band = 60–100</div><div id="chartEye"></div></div>
   </div>
 
   <!-- HISTORY -->
@@ -268,17 +285,34 @@ async function start(){
   firstWordT=0; endT=0;
   frames=[]; finalText=""; sessionFinal=""; interimText=""; recErr=""; speechMarks=[]; chunks=[];
   if(audioURL){ URL.revokeObjectURL(audioURL); audioURL=null; }
+  if(vidURL){ URL.revokeObjectURL(vidURL); vidURL=null; }
+  $("vidRes").innerHTML="";
   listenOnly = PHONE_MODE && $("listenOnly").checked;
   const useAudio = !PHONE_MODE || listenOnly;
-  if(useAudio){
-    try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
-    catch(e){ alert2("Microphone permission was blocked. Please allow the microphone and try again."); return; }
-    ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const src = ctx.createMediaStreamSource(stream);
-    analyser = ctx.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
-    try{ mediaRec = new MediaRecorder(stream); mediaRec.ondataavailable = e=>chunks.push(e.data); mediaRec.start(); }catch(e){ mediaRec=null; }
+  const useVideo = videoOn();
+  vframes = []; vidURL = null;
+  if(useVideo){
+    $("recBtn").disabled = true; $("recBtn").textContent = "Loading video coach…";
+    const ok = await loadVision();
+    $("recBtn").disabled = false;
+    if(!ok){ $("recBtn").textContent="Start speaking"; return; }
   }
-  recording = true; startT = performance.now();
+  if(useAudio || useVideo){
+    try{ stream = await navigator.mediaDevices.getUserMedia({audio:useAudio,
+           video: useVideo ? {facingMode:"user", width:{ideal:640}, height:{ideal:480}} : false}); }
+    catch(e){ $("recBtn").textContent="Start speaking";
+      alert2(useVideo ? "Camera or microphone permission was blocked. Tap the 🔒 next to the address → Permissions → allow Camera and Microphone, then try again."
+                      : "Microphone permission was blocked. Please allow the microphone and try again."); return; }
+    if(useAudio){
+      ctx = new (window.AudioContext||window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+    }
+    if(useVideo) await startVision(stream);
+    try{ mediaRec = new MediaRecorder(stream); mediaRec.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); }; mediaRec.start(); }catch(e){ mediaRec=null; }
+  }
+  recording = true; startT = performance.now(); lastVT = 0;
+  $("videoMode").disabled = true;
   $("recBtn").textContent="Stop"; $("recBtn").classList.add("stop");
   $("resCard").classList.add("hide"); $("live").textContent="Listening… start speaking.";
   if(!listenOnly) startRecognition(); else $("live").textContent="🎧 Recording… speak now.";
@@ -337,13 +371,16 @@ function startRecognition(){
 }
 function stop(){
   if(!recording) return;
-  recording=false; clearInterval(tick);
+  recording=false; clearInterval(tick); $("videoMode").disabled = false;
   endT = performance.now();
   const secs = Math.min(DURATION, (endT-startT)/1000);
   $("recBtn").textContent="Analysing…"; $("recBtn").disabled=true; $("recBtn").classList.remove("stop");
   try{ rec.stop(); }catch(e){}
+  stopVision();
   if(mediaRec && mediaRec.state!=="inactive"){
-    mediaRec.onstop = ()=>{ audioURL = URL.createObjectURL(new Blob(chunks, {type: mediaRec.mimeType || "audio/webm"})); showPlayer(); };
+    const isVid = !!(stream && stream.getVideoTracks().length);
+    mediaRec.onstop = ()=>{ const u = URL.createObjectURL(new Blob(chunks, {type: mediaRec.mimeType || (isVid?"video/webm":"audio/webm")}));
+      if(isVid) vidURL = u; else audioURL = u; showPlayer(); };
     mediaRec.stop();
   }
   if(stream) stream.getTracks().forEach(t=>t.stop());
@@ -358,6 +395,7 @@ function stop(){
       $("resTopic").textContent = topic; $("metrics").innerHTML="";
       $("tips").innerHTML="<li>Listen for: speed, long silences, 'um/actually', and whether your voice drops at the end of sentences.</li><li>Untick Practice &amp; listen mode to get your score.</li>";
       $("transcript").textContent="(not transcribed in listen mode)";
+      $("coach").innerHTML=""; renderVideo(analyseVideo(secs));
       $("resCard").classList.remove("hide"); window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
     } else analyse(text, secs);
     showPlayer();
@@ -366,13 +404,216 @@ function stop(){
 }
 function showPlayer(){
   const box = $("player");
-  if(audioURL){ box.innerHTML = `<audio controls src="${audioURL}" style="width:100%"></audio><div class="sub">Only kept until you close this page — never saved or uploaded.</div>`; }
+  if(vidURL){ box.innerHTML = `<video controls playsinline src="${vidURL}"></video><div class="sub">🎥 Watch yourself back${PHONE_MODE&&!listenOnly?" (silent on phones — the mic is busy recognising words)":""}. Only kept until you close this page — never saved or uploaded.</div>`; }
+  else if(audioURL){ box.innerHTML = `<audio controls src="${audioURL}" style="width:100%"></audio><div class="sub">Only kept until you close this page — never saved or uploaded.</div>`; }
   else if(PHONE_MODE && !listenOnly){ box.innerHTML = `<div class="sub">▶️ Want to hear yourself? Tick <b>🎧 Practice &amp; listen mode</b> above the Start button. (On phones the microphone can do only one job at a time.)</div>`; }
   else box.innerHTML = "";
 }
 $("recBtn").onclick = ()=> recording ? stop() : start();
 $("againBtn").onclick = ()=>{ $("resCard").classList.add("hide"); window.scrollTo({top:$("recCard").offsetTop-10,behavior:"smooth"}); };
 function alert2(msg){ $("live").textContent = "⚠️ " + msg; }
+
+// ---------- VIDEO MODE: eye contact & body language (runs on this device; video never leaves it) ----------
+const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const FACE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const VID_MS = 150;                       // ~6–7 checks per second
+let faceLM=null, poseLM=null, visionLoading=null, vframes=[], vidURL=null, vTimer=null, lastVT=0;
+const videoOn = ()=> $("videoMode").checked && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+function vStatus(msg){ const s=$("vidStatus"); s.textContent = msg||""; s.classList.toggle("hide", !msg); }
+function loadVision(){
+  if(faceLM) return Promise.resolve(true);
+  if(visionLoading) return visionLoading;
+  vStatus("⏳ Loading the video coach (first time only, ~15 MB)…");
+  visionLoading = (async()=>{
+    try{
+      const v = await import(MP + "/vision_bundle.mjs");
+      const files = await v.FilesetResolver.forVisionTasks(MP + "/wasm");
+      const make = async (Cls, opts, model)=>{
+        try{ return await Cls.createFromOptions(files, {...opts, runningMode:"VIDEO", baseOptions:{modelAssetPath:model, delegate:"GPU"}}); }
+        catch(e){ return await Cls.createFromOptions(files, {...opts, runningMode:"VIDEO", baseOptions:{modelAssetPath:model, delegate:"CPU"}}); }
+      };
+      faceLM = await make(v.FaceLandmarker, {numFaces:1, outputFaceBlendshapes:true, outputFacialTransformationMatrixes:true}, FACE_MODEL);
+      try{ poseLM = await make(v.PoseLandmarker, {numPoses:1}, POSE_MODEL); }catch(e){ poseLM=null; }   // posture is optional
+      vStatus("✅ Video coach ready. Look at the camera lens, not at the screen."); return true;
+    }catch(e){
+      visionLoading=null; faceLM=null;
+      vStatus("⚠️ Couldn't load the video coach — check your internet and try again. (Your voice will still be scored if you untick Video mode.)");
+      return false;
+    }
+  })();
+  return visionLoading;
+}
+async function startVision(st){
+  const vid = $("camVid"); vid.srcObject = new MediaStream(st.getVideoTracks());
+  $("cam").classList.remove("hide"); $("cam").classList.toggle("tiny", $("hidePrev").checked);
+  try{ await vid.play(); }catch(e){}
+  lastVT = 0;
+  vTimer = setInterval(()=>visionStep(vid), VID_MS);
+}
+function stopVision(){
+  clearInterval(vTimer); vTimer=null;
+  const vid=$("camVid"); vid.pause(); vid.srcObject=null; $("cam").classList.add("hide");
+}
+const DEG = 180/Math.PI, clamp1 = x=>Math.max(-1,Math.min(1,x));
+function visionStep(vid){
+  if(!faceLM || vid.readyState < 2 || !vid.videoWidth) return;
+  let ts = performance.now(); if(ts <= lastVT) ts = lastVT + 1; lastVT = ts;
+  const f = {t: ts - startT, face:false};
+  try{
+    const r = faceLM.detectForVideo(vid, ts);
+    if(r.faceLandmarks && r.faceLandmarks.length){
+      const L = r.faceLandmarks[0], bs = {};
+      ((r.faceBlendshapes && r.faceBlendshapes[0] && r.faceBlendshapes[0].categories) || []).forEach(c=> bs[c.categoryName]=c.score);
+      const g = k => bs[k]||0;
+      f.face = true;
+      // head angle from the face's 3-D rotation (falls back to landmarks)
+      const M = r.facialTransformationMatrixes && r.facialTransformationMatrixes[0] && r.facialTransformationMatrixes[0].data;
+      const a=L[234], b=L[454], n=L[1], eL=L[33], eR=L[263];
+      if(M){ const sx=Math.hypot(M[0],M[1],M[2])||1, sy=Math.hypot(M[4],M[5],M[6])||1, sz=Math.hypot(M[8],M[9],M[10])||1;
+        f.yaw = Math.abs(Math.asin(clamp1(M[8]/sz)))*DEG; f.pitch = Math.abs(Math.asin(clamp1(M[9]/sz)))*DEG;
+        f.roll = Math.abs(Math.atan2(M[1]/sx, M[5]/sy))*DEG;
+      } else {
+        f.yaw = Math.abs((n.x-a.x)/((b.x-a.x)||1e-3) - .5)*120; f.pitch = 0;
+        f.roll = Math.abs(Math.atan2(eR.y-eL.y, eR.x-eL.x))*DEG;
+      }
+      if(f.roll>90) f.roll = 180-f.roll;
+      f.blink = (g("eyeBlinkLeft")+g("eyeBlinkRight"))/2;
+      f.side = Math.max(g("eyeLookOutLeft"),g("eyeLookOutRight"),g("eyeLookInLeft"),g("eyeLookInRight"));
+      f.down = (g("eyeLookDownLeft")+g("eyeLookDownRight"))/2;
+      f.up = (g("eyeLookUpLeft")+g("eyeLookUpRight"))/2;
+      f.smile = (g("mouthSmileLeft")+g("mouthSmileRight"))/2;
+      f.brow = Math.max(g("browDownLeft"), g("browDownRight"));
+      f.iod = Math.hypot((eR.x-eL.x)*vid.videoWidth, (eR.y-eL.y)*vid.videoHeight);   // eye distance in pixels
+      f.nx = n.x*vid.videoWidth; f.ny = n.y*vid.videoHeight;
+      f.faceW = Math.abs(b.x-a.x); f.cx = n.x;
+      f.look = f.blink>0.45 ? null : (f.yaw<15 && f.pitch<18 && f.side<0.5 && f.down<0.55 && f.up<0.5);
+    }
+    if(poseLM){
+      const p = poseLM.detectForVideo(vid, ts);
+      const P = p.landmarks && p.landmarks[0];
+      if(P){
+        const vis = i => (P[i].visibility??1) > 0.6 && P[i].y < 0.98 && P[i].y > 0 && P[i].x > 0 && P[i].x < 1;
+        if(vis(11)&&vis(12)){
+          f.shTilt = Math.abs(Math.atan2(P[11].y-P[12].y, P[11].x-P[12].x))*DEG; if(f.shTilt>90) f.shTilt=180-f.shTilt;
+          f.shY = (P[11].y+P[12].y)/2; f.shW = Math.abs(P[11].x-P[12].x);
+        }
+        f.hands = [15,16].filter(vis).map(i=>({x:P[i].x, y:P[i].y}));
+        f.touch = f.hands.some(h=> Math.hypot(h.x-P[0].x, h.y-P[0].y) < Math.max(0.1, (f.faceW||0.15)*0.8));
+      }
+    }
+  }catch(e){ return; }
+  vframes.push(f);
+  // live badge
+  const d=$("eyeDot"); d.style.background = !f.face ? "#d64545" : f.look===false ? "#d48a00" : f.look ? "#1f9d55" : d.style.background;
+  $("eyeBadge").lastChild.textContent = !f.face ? "Face not seen" : "Eye contact";
+}
+
+// turn the frames into body-language scores
+function analyseVideo(secs){
+  if(!vframes.length) return null;
+  const n = vframes.length, F = vframes.filter(f=>f.face);
+  const facePct = F.length/n*100;
+  const judged = F.filter(f=>f.look!==null && f.look!==undefined);
+  const eyePct = judged.length ? judged.filter(f=>f.look).length/judged.length*100 : 0;
+  // look-away spells over 2 s (looking away or out of frame)
+  let away=0, run=0, spells=0, longest=0, readDown=0;
+  vframes.forEach(f=>{
+    const off = !f.face || f.look===false;
+    if(off){ run += VID_MS; if(f.face && f.down>=0.55) readDown++; } else { if(run>=2000) spells++; longest=Math.max(longest,run); run=0; }
+  });
+  if(run>=2000) spells++; longest=Math.max(longest,run);
+  const awayFrames = judged.filter(f=>!f.look).length;
+  const mostlyDown = awayFrames>5 && readDown/awayFrames > 0.5;
+  // blinks per minute
+  let blinks=0, closed=false; F.forEach(f=>{ if(!closed && f.blink>0.5){ blinks++; closed=true; } else if(f.blink<0.3) closed=false; });
+  const faceMins = Math.max(0.15, F.length*VID_MS/60000);
+  const bpm = blinks/faceMins;
+  // smile / warmth, frown
+  const smilePct = F.length ? F.filter(f=>f.smile>0.3).length/F.length*100 : 0;
+  const frownPct = F.length ? F.filter(f=>f.brow>0.5).length/F.length*100 : 0;
+  // head steadiness: average speed of the nose, in eye-widths per second
+  let mv=[]; for(let i=1;i<F.length;i++){ const a=F[i-1], b=F[i], dt=(b.t-a.t)/1000;
+    if(dt>0 && dt<0.6){ const iod=(a.iod+b.iod)/2||1; mv.push(Math.hypot(b.nx-a.nx, b.ny-a.ny)/iod/dt); } }
+  const headSpeed = mv.length ? pct(mv,.5) : 0;
+  const tilt = F.length ? pct(F.map(f=>f.roll),.5) : 0;
+  // framing
+  const faceW = F.length ? pct(F.map(f=>f.faceW),.5) : 0;
+  const offCentre = F.length ? pct(F.map(f=>Math.abs(f.cx-.5)),.5) : 0;
+  // posture & hands (needs the body model)
+  const S = vframes.filter(f=>f.shTilt!==undefined);
+  const shTilt = S.length ? pct(S.map(f=>f.shTilt),.5) : null;
+  const shDrop = S.length>10 ? (pct(S.slice(-Math.ceil(S.length/3)).map(f=>f.shY),.5) - pct(S.slice(0,Math.ceil(S.length/3)).map(f=>f.shY),.5)) : 0;  // shoulders sinking over the minute
+  const withPose = vframes.filter(f=>f.hands);
+  const handPct = withPose.length ? withPose.filter(f=>f.hands.length).length/withPose.length*100 : null;
+  let touches=0, tRun=false; withPose.forEach(f=>{ if(f.touch && !tRun){ touches++; tRun=true; } else if(!f.touch) tRun=false; });
+
+  const band=(v,lo,hi,soft)=> v>=lo&&v<=hi ? 100 : Math.max(0, 100 - (v<lo? lo-v : v-hi)/soft*100);
+  const M = [
+    {k:"Eye contact", v: Math.round(eyePct)+"% of the time"+(spells?` · looked away ${spells}×`:""), s: band(eyePct,65,100,45), w:2, note:"Aim 60–80% at the lens"},
+    {k:"Face in view", v: Math.round(facePct)+"%"+(faceW>0.45?" · too close":faceW&&faceW<0.12?" · too far":offCentre>0.2?" · off-centre":""),
+       s: Math.round((band(facePct,90,100,40)+band(faceW*100,12,45,12)+band(offCentre*100,0,20,20))/3), w:1, note:"Head & shoulders, centred"},
+    {k:"Head steadiness", v: headSpeed<0.4?"calm":headSpeed<1.2?"natural movement":"lots of movement", s: band(headSpeed,0,1.2,1.5), w:1, note:"Nods are fine; avoid swaying"},
+    {k:"Head & posture", v: "head tilt "+Math.round(tilt)+"°"+(shTilt!==null?` · shoulders ${Math.round(shTilt)}°`:"")+(shDrop>0.04?" · slumped later":""),
+       s: Math.round((band(tilt,0,8,12) + (shTilt!==null? band(shTilt,0,5,8) : band(tilt,0,8,12)) + (shDrop>0.04?40:100))/3), w:1, note:"Upright, level shoulders"},
+    {k:"Facial warmth", v: Math.round(smilePct)+"% smiling"+(frownPct>30?" · frowning often":""), s: Math.round((band(smilePct,10,70,15) + band(frownPct,0,30,40))/2), w:1, note:"Friendly face, relaxed brow"},
+    handPct!==null && {k:"Hand gestures", v: handPct<5?"hands not seen":Math.round(handPct)+"% visible"+(touches?` · touched face ${touches}×`:""),
+       s: handPct<5 ? 60 : Math.round((band(handPct,25,90,25) + Math.max(0,100-touches*20))/2), w:1, note:"Open hands help explain"},
+    F.length*VID_MS>15000 && {k:"Blink rate", v: Math.round(bpm)+" per min", s: band(bpm,8,30,20), w:0.5, note:"Very fast blinking = nerves"}
+  ].filter(Boolean);
+  M.forEach(m=>m.s=Math.round(m.s));
+  const wsum = M.reduce((a,m)=>a+m.w,0);
+  const score = Math.round(M.reduce((a,m)=>a+m.s*m.w,0)/wsum);
+  const TIP = {
+    "Eye contact": mostlyDown ? `You looked down for much of the minute (eye contact ${Math.round(eyePct)}%). Glance at notes, then lift your eyes to the lens before you speak — "look, then talk".`
+                 : `Eye contact was ${Math.round(eyePct)}%${spells?` with ${spells} look-away(s) over 2 s`:""}. Look into the camera lens (put a small sticker beside it) and hold it for a whole sentence; glance away only between ideas.`,
+    "Face in view": faceW>0.45 ? "You were too close to the camera. Sit back so your head and shoulders fill the frame — it looks calmer and shows your gestures."
+                  : faceW && faceW<0.12 ? "You were far from the camera. Move closer so your face fills about a third of the frame."
+                  : "Keep your face in the centre of the frame — raise the laptop or phone to eye level so you aren't looking down at the lens.",
+    "Head steadiness": "Your head moved a lot. Plant both feet, rest your shoulders and keep your head still between points; a small nod on a key word is enough.",
+    "Head & posture": shDrop>0.04 ? "You sank lower as the minute went on. Sit tall with your back against the chair and both feet on the floor, and reset your posture before each new point."
+                    : "Your head or shoulders were tilted. Sit or stand upright with level shoulders and your chin parallel to the floor — it reads as confident and authoritative.",
+    "Facial warmth": frownPct>30 ? "Your brow was tense much of the time. Relax your forehead and soften your face — try a small smile when you greet and when you finish."
+                   : "Your face was quite serious. Add a warm smile at the start and end, and let your face match your words — students relax when you look approachable.",
+    "Hand gestures": touches ? `You touched your face ${touches} time(s), which can look nervous. Keep your hands loosely together at waist level and use them to illustrate points.`
+                   : handPct<5 ? "Your hands weren't in view. Sit back a little so the camera sees your hands, and use open-palm gestures to show structure (first… second…)."
+                   : "Use your hands more — open palms when explaining, counting on fingers for lists. Keep gestures between your shoulders and waist.",
+    "Blink rate": `You blinked about ${Math.round(bpm)} times a minute — a sign of nerves. Take one slow breath before you start and pause briefly between ideas.`
+  };
+  const weak = [...M].filter(m=>m.s<80).sort((a,b)=>a.s-b.s).slice(0,3);
+  const tips = weak.length ? weak.map(m=>TIP[m.k]) : ["Excellent presence on camera — steady eye contact and confident body language. Keep it up!"];
+  if(handPct===null) tips.push("Posture and hand tracking weren't available on this device — eye contact and face were still measured.");
+  return {score, eyePct:Math.round(eyePct), metrics:M, tips};
+}
+function renderVideo(V){
+  const box = $("vidRes");
+  if(!V){ box.innerHTML=""; return; }
+  const cls = s=> s>=80?"g":s>=55?"o":"b", lab = s=> s>=80?"Good":s>=55?"Okay":"Work on";
+  box.innerHTML = `<div class="vres"><h2>🎥 Eye contact &amp; body language</h2>
+    <div class="overall"><div class="ring ${cls(V.score)}">${V.score}</div><div><b>${V.score>=80?"Confident on camera":V.score>=55?"Good presence — a few things to polish":"Work on your on-camera presence"}</b><div class="sub">Eye contact ${V.eyePct}% of the time</div></div></div>
+    <div class="grid">${V.metrics.map(m=>`<div class="m"><div class="k">${esc(m.k)}</div><div class="v" style="font-size:16px">${esc(m.v)}</div><span class="tag ${cls(m.s)}">${lab(m.s)}</span>${m.note?` <span class="sub">${esc(m.note)}</span>`:""}</div>`).join("")}</div>
+    <h3 style="font-size:15px;margin:14px 0 6px">Body-language tips</h3><ol class="tips">${(V.tips||[]).map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
+    <div class="sub">Measured on this device from your camera — approximate, best in good front light. Your video is never uploaded.</div></div>`;
+}
+function videoReport(V){
+  if(!V) return "";
+  return `\n\nBody language (video): ${V.score}/100\n` + V.metrics.map(m=>`- ${m.k}: ${m.v} (${m.s}/100)`).join("\n");
+}
+// remember the Video mode choice; pre-load the models as soon as it's switched on
+try{ $("videoMode").checked = localStorage.getItem("sc_video")==="1"; $("hidePrev").checked = localStorage.getItem("sc_hideprev")==="1"; }catch(e){}
+function onVideoToggle(){
+  $("hidePrevWrap").classList.toggle("hide", !$("videoMode").checked);
+  try{ localStorage.setItem("sc_video", $("videoMode").checked?"1":"0"); }catch(e){}
+  if($("videoMode").checked){
+    if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){ vStatus("⚠️ This browser can't use the camera."); return; }
+    loadVision();
+  } else vStatus("");
+}
+$("videoMode").onchange = onVideoToggle;
+$("hidePrev").onchange = ()=>{ try{ localStorage.setItem("sc_hideprev", $("hidePrev").checked?"1":"0"); }catch(e){}
+  if(recording) $("cam").classList.toggle("tiny", $("hidePrev").checked); };
+if($("videoMode").checked) onVideoToggle();
 
 // pitch by autocorrelation (70–400 Hz)
 function pitchOf(buf, sr){
@@ -450,7 +691,9 @@ function analyse(text, secs){
   const variety = words.length ? new Set(words).size/words.length : 0;
   const pausesPerMin = pauseCount/(secs/60);
 
+  const V = analyseVideo(secs);
   if(!words.length){
+    renderVideo(V); $("coach").innerHTML="";
     $("ring").textContent="–"; $("ring").className="ring b";
     $("verdict").textContent="I couldn't hear any words";
     $("resTopic").textContent = topic;
@@ -504,6 +747,7 @@ function analyse(text, secs){
   $("tips").innerHTML = tips.map(t=>`<li>${t}</li>`).join("");
   const fb = coachFeedback(text, topic, lang);
   $("coach").innerHTML = fb.html;
+  renderVideo(V);
   $("transcript").textContent = text || "(nothing recognised)";
   $("resCard").classList.remove("hide");
   window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
@@ -511,6 +755,7 @@ function analyse(text, secs){
   // --- save ---
   const entry = {id:newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long2,
                  metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text, tips};
+  if(V) entry.video = {score:V.score, eyePct:V.eyePct, metrics:V.metrics.map(m=>({k:m.k,v:m.v,s:m.s})), tips:V.tips};
   history.unshift(entry); history = history.slice(0,200);
   saveLocal();
   lastReport = makeReport(entry, tips) + (fb.plain ? "\n\nCoach's feedback:\n" + fb.plain : "");
@@ -612,6 +857,9 @@ function renderProgress(){
   $("weekly").textContent = w;
   $("chartScore").innerHTML = svgLine(last.map(h=>h.overall), 0, 100, null, "#2f6fed");
   $("chartWpm").innerHTML = svgLine(last.map(h=>h.wpm), 60, 220, [120,160], "#d48a00");
+  const ve = last.filter(h=>h.video && h.video.eyePct!=null).map(h=>h.video.eyePct);
+  $("eyeChartWrap").classList.toggle("hide", !ve.length);
+  $("chartEye").innerHTML = svgLine(ve, 0, 100, [60,100], "#7a4fd6");
   $("chartFill").innerHTML = svgLine(last.map(h=>h.fillers), 0, Math.max(10, ...last.map(h=>h.fillers)), null, "#d64545");
 }
 
@@ -750,8 +998,8 @@ function coachFeedback(text, topic, lang){
 let lastReport="";
 function makeReport(e,tips){
   return `Speech Coach report — ${new Date(e.date).toLocaleString()}\nLanguage: ${e.lang==="en"?"English":"Bangla"}\nTopic: ${e.topic}\nOverall: ${e.overall}/100\n`+
-    e.metrics.map(m=>`- ${m.k}: ${m.v} (${m.s}/100)`).join("\n")+
-    `\n\nTranscript:\n${e.transcript}\n\nPlease give me deeper feedback on my clarity, structure and word choice.`;
+    e.metrics.map(m=>`- ${m.k}: ${m.v} (${m.s}/100)`).join("\n")+ videoReport(e.video) +
+    `\n\nTranscript:\n${e.transcript}\n\nPlease give me deeper feedback on my clarity, structure and word choice${e.video?", and on my eye contact and body language":""}.`;
 }
 $("copyBtn").onclick = async ()=>{
   try{ await navigator.clipboard.writeText(lastReport); $("copyMsg").textContent="Copied! Paste it into Claude."; }
@@ -761,8 +1009,8 @@ $("copyBtn").onclick = async ()=>{
 function renderHistory(){
   renderProgress();
   if(!history.length) return;
-  $("history").innerHTML = `<table><tr><th>Date</th><th>Lang</th><th>Score</th><th>WPM</th><th>Fillers</th><th>Long pauses</th></tr>`+
-    history.slice(0,30).map(h=>`<tr class="hrow" data-id="${esc(h.id)}" style="cursor:pointer"><td>${new Date(h.date).toLocaleDateString()} <span class="sub">${new Date(h.date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span></td><td>${h.lang.toUpperCase()}</td><td><b>${h.overall}</b></td><td>${h.wpm}</td><td>${h.fillers}</td><td>${h.longPauses}</td></tr>`).join("")+`</table><div class="sub" style="margin-top:6px">👆 Tap any session to see its full score card.</div>`;
+  $("history").innerHTML = `<table><tr><th>Date</th><th>Lang</th><th>Score</th><th>WPM</th><th>Fillers</th><th>Long pauses</th><th>Eye</th></tr>`+
+    history.slice(0,30).map(h=>`<tr class="hrow" data-id="${esc(h.id)}" style="cursor:pointer"><td>${new Date(h.date).toLocaleDateString()} <span class="sub">${new Date(h.date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span></td><td>${h.lang.toUpperCase()}</td><td><b>${h.overall}</b></td><td>${h.wpm}</td><td>${h.fillers}</td><td>${h.longPauses}</td><td>${h.video && h.video.eyePct!=null ? h.video.eyePct+"%" : "–"}</td></tr>`).join("")+`</table><div class="sub" style="margin-top:6px">👆 Tap any session to see its full score card.</div>`;
   document.querySelectorAll(".hrow").forEach(r=>r.onclick=()=>{
     const h = history.find(x=>String(x.id)===r.dataset.id); if(h) showSession(h);
   });
@@ -778,6 +1026,7 @@ function showSession(h){
   $("tips").innerHTML = (h.tips||[]).map(t=>`<li>${t}</li>`).join("") || `<li class="sub">Tips weren't saved for this older session.</li>`;
   const fb = coachFeedback(h.transcript||"", h.topic, h.lang);
   $("coach").innerHTML = fb.html;
+  renderVideo(h.video && Array.isArray(h.video.metrics) ? h.video : null);
   $("transcript").textContent = h.transcript || "(no transcript)";
   $("player").innerHTML = `<div class="sub">🕘 Past session — recordings are never kept.</div>`;
   lastReport = makeReport(h, h.tips||[]) + (fb.plain ? "\n\nCoach's feedback:\n" + fb.plain : "");
