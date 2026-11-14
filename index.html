@@ -64,6 +64,16 @@
   .cam .eye{position:absolute;left:6px;top:6px;font-size:12px;font-weight:600;color:#fff;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:20px}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:#999;vertical-align:middle}
   .vres{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  body{padding-bottom:72px}
+  .tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:#fff;border-top:1px solid var(--line);z-index:20;padding-bottom:env(safe-area-inset-bottom)}
+  .tabs button{flex:1;border:0;background:none;padding:12px 0 10px;font:inherit;font-size:14px;color:var(--muted);cursor:pointer}
+  .tabs button.on{color:var(--accent);font-weight:700;border-top:3px solid var(--accent);padding-top:9px}
+  .twist{font-size:22px;font-weight:700;line-height:1.45;text-align:center;margin:14px 0;color:var(--ink)}
+  .wbar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin:6px 0 12px}
+  .wbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+  .big.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent);margin-top:8px}
+  .miss{background:#fdecec;color:var(--bad);border-radius:6px;padding:1px 6px;margin:2px;display:inline-block}
+  .vrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
   #player video{width:100%;max-height:360px;border-radius:10px;background:#000;transform:scaleX(-1)}
 </style>
 </head>
@@ -78,10 +88,32 @@
 
   <div id="support" class="warn hide"></div>
 
+  <!-- ===================== PRACTICE VIEW ===================== -->
+  <div id="viewPractice">
+
+  <!-- WARM-UP: tongue twister -->
+  <div class="card" id="warmCard">
+    <h2>👅 Warm-up: today's tongue twister</h2>
+    <div class="sub">Say it aloud, again and again, clearly and then faster, for 20–30 seconds.</div>
+    <div class="twist" id="twistText"></div>
+    <div class="timer" id="wTimer" style="font-size:34px">0:30</div>
+    <div class="wbar"><i id="wBar"></i></div>
+    <div class="live" id="wLive" style="min-height:24px"></div>
+    <div id="wResult"></div>
+    <button class="big" id="wStart">▶ Start warm-up</button>
+    <button class="big hide" id="wReady" disabled>Ready → go to recording</button>
+    <div class="row" style="justify-content:space-between">
+      <button class="btn" id="wAnother">🔀 Another twister</button>
+      <button class="btn" id="wSkip">Skip warm-up ⏭</button>
+    </div>
+  </div>
+
+  <div id="mainPractice" class="hide">
   <!-- STEP 1: TOPIC -->
   <div class="card" id="topicCard">
-    <h2>1. Pick today's topic</h2>
+    <h2>1. Pick a topic</h2>
     <div id="topics"></div>
+    <button class="btn" id="newTopics" style="margin:4px 0 6px">🔀 New topics</button>
     <button class="topic" id="ownBtn">✏️ My own topic</button>
     <input type="text" id="ownInput" class="hide" placeholder="Type your topic">
   </div>
@@ -130,13 +162,19 @@
     <div class="sub" id="copyMsg"></div>
   </div>
 
+  </div><!-- /mainPractice -->
+  </div><!-- /viewPractice -->
+
+  <!-- ===================== DASHBOARD VIEW ===================== -->
+  <div id="viewDash" class="hide">
+  <div id="dashSession"></div>
   <!-- PROGRESS -->
   <div class="card">
     <h2>📈 Your progress</h2>
     <div class="grid" id="stats"></div>
     <div id="weekly" class="sub" style="margin:12px 0"></div>
     <div class="k sub">Overall score</div><div id="chartScore"></div>
-    <div class="k sub" style="margin-top:10px">Speed (wpm) — green band = ideal 120–160</div><div id="chartWpm"></div>
+    <div class="k sub" style="margin-top:10px">Speed (wpm) — green band = ideal 120–150</div><div id="chartWpm"></div>
     <div class="k sub" style="margin-top:10px">Filler words per session</div><div id="chartFill"></div>
     <div id="eyeChartWrap" class="hide"><div class="k sub" style="margin-top:10px">🎥 Eye contact % (video sessions) — green band = 60–100</div><div id="chartEye"></div></div>
   </div>
@@ -145,6 +183,14 @@
   <div class="card">
     <h2>Recent sessions</h2>
     <div id="history" class="sub">No sessions yet.</div>
+  </div>
+
+  <!-- SAVED VIDEOS -->
+  <div class="card">
+    <h2>🎥 Saved videos (last 7 days)</h2>
+    <div class="sub">Kept privately inside the app on this device — not in your Gallery or Files, never uploaded. Each video is deleted automatically 7 days after recording.</div>
+    <div id="videoList" class="sub" style="margin-top:8px">No saved videos yet.</div>
+    <div id="videoPlay" style="margin-top:10px"></div>
   </div>
 
   <!-- SYNC -->
@@ -158,76 +204,13 @@
       <div class="sub" id="syncMsg" style="margin-top:8px"></div>
     </details>
   </div>
+  </div><!-- /viewDash -->
 </div>
+<nav class="tabs"><button id="tabPractice" class="on">🎙️ Practice</button><button id="tabDash">📊 Dashboard</button></nav>
+<script src="topics.js"></script>
 
 <script>
-// ---------- DATA ----------
-const TOPICS = {
-  en: [
-    "Explain to a junior doctor why we pre-oxygenate before induction.",
-    "Describe your ideal teaching session for FCPS students.",
-    "What makes a good teacher memorable?",
-    "Tell me about a busy day in the cardiac ICU.",
-    "How would you calm an anxious patient before surgery?",
-    "Your favourite place in Dhaka and why.",
-    "Should doctors use AI in daily practice?",
-    "Describe a mistake you learned a lot from.",
-    "How do you manage stress during exams?",
-    "Explain the airway to someone with no medical background.",
-    "What would you change about medical education in Bangladesh?",
-    "Describe your morning routine.",
-    "A book or film that changed how you think.",
-    "How to give feedback to a student who answered wrongly.",
-    "Why is teamwork important in the operating theatre?",
-    "Plan a perfect weekend for your family.",
-    "How do you prepare for an important presentation?",
-    "Explain what anaesthesia is to a 10-year-old.",
-    "The best advice you have ever received.",
-    "How has social media changed the way people talk?",
-    "Describe a patient who taught you something.",
-    "What does good communication mean to you?",
-    "How should a student approach MCQs on exam day?",
-    "Introduce yourself to a new class of students.",
-    "Is it better to be a specialist or a generalist?",
-    "Describe your hometown to a foreigner.",
-    "What skill do you want to learn this year and why?",
-    "How to stay healthy with long duty hours.",
-    "Convince a student that physiology is interesting.",
-    "Describe a moment you felt proud at work."
-  ],
-  bn: [
-    "একজন জুনিয়র ডাক্তারকে বোঝান কেন ইন্ডাকশনের আগে প্রি-অক্সিজেনেশন জরুরি।",
-    "আপনার আদর্শ এফসিপিএস ক্লাস কেমন হবে বর্ণনা করুন।",
-    "একজন ভালো শিক্ষককে কেন মনে থাকে?",
-    "কার্ডিয়াক আইসিইউতে একটি ব্যস্ত দিনের কথা বলুন।",
-    "অপারেশনের আগে একজন ভীত রোগীকে কীভাবে শান্ত করবেন?",
-    "ঢাকায় আপনার প্রিয় জায়গা এবং কেন।",
-    "ডাক্তারদের কি দৈনন্দিন কাজে এআই ব্যবহার করা উচিত?",
-    "এমন একটি ভুলের কথা বলুন যা থেকে অনেক শিখেছেন।",
-    "পরীক্ষার সময় চাপ কীভাবে সামলান?",
-    "বাংলাদেশের মেডিকেল শিক্ষায় কী পরিবর্তন আনতে চান?",
-    "আপনার সকালের রুটিন বর্ণনা করুন।",
-    "একটি বই বা সিনেমা যা আপনার চিন্তা বদলে দিয়েছে।",
-    "ভুল উত্তর দেওয়া ছাত্রকে কীভাবে ফিডব্যাক দেবেন?",
-    "অপারেশন থিয়েটারে টিমওয়ার্ক কেন গুরুত্বপূর্ণ?",
-    "পরিবারের সাথে একটি সুন্দর ছুটির দিনের পরিকল্পনা করুন।",
-    "গুরুত্বপূর্ণ প্রেজেন্টেশনের আগে কীভাবে প্রস্তুতি নেন?",
-    "একটি দশ বছরের শিশুকে অ্যানেসথেসিয়া কী তা বোঝান।",
-    "জীবনে পাওয়া সেরা উপদেশটি কী?",
-    "সোশ্যাল মিডিয়া মানুষের কথা বলার ধরন কীভাবে বদলেছে?",
-    "এমন একজন রোগীর কথা বলুন যিনি আপনাকে কিছু শিখিয়েছেন।",
-    "ভালো যোগাযোগ বলতে আপনি কী বোঝেন?",
-    "পরীক্ষার দিন এমসিকিউ কীভাবে উত্তর করা উচিত?",
-    "নতুন একটি ক্লাসের সামনে নিজের পরিচয় দিন।",
-    "আপনার নিজের শহরকে একজন বিদেশির কাছে বর্ণনা করুন।",
-    "এই বছর কোন দক্ষতা শিখতে চান এবং কেন?",
-    "লম্বা ডিউটির মাঝে কীভাবে সুস্থ থাকবেন?",
-    "একজন ছাত্রকে বোঝান ফিজিওলজি কেন মজার বিষয়।",
-    "কাজে গর্ব অনুভব করেছেন এমন একটি মুহূর্তের কথা বলুন।",
-    "বাংলাদেশে রাস্তার যানজট কমাতে কী করা যায়?",
-    "আপনার প্রিয় খাবার এবং তার সাথে জড়িত কোনো স্মৃতি।"
-  ]
-};
+// ---------- DATA ---------- (TOPICS and TWISTERS live in topics.js)
 const FILLERS = {
   en: ["um","umm","uh","uhh","er","erm","ah","hmm","like","actually","basically","literally","you know","i mean","kind of","sort of","okay so","right"],
   bn: ["মানে","আসলে","ইয়ে","এই যে","আচ্ছা","বুঝছেন","বুঝলেন","ধরেন","তো","হুম","উম","আঁ"]
@@ -243,15 +226,27 @@ try { history = JSON.parse(localStorage.getItem("sc_history") || "[]"); } catch(
 const $ = id => document.getElementById(id);
 
 // ---------- TOPICS ----------
-function dailyPick(list){
-  const d = new Date(); let seed = d.getFullYear()*1000 + (d.getMonth()+1)*40 + d.getDate();
-  const rnd = () => (seed = (seed*9301+49297)%233280)/233280;
-  const idx = [...list.keys()].sort(()=>rnd()-0.5);
-  return idx.slice(0,3).map(i=>list[i]);
+function usedTopics(){ let u=[]; try{ u=JSON.parse(localStorage.getItem("sc_used_topics")||"[]"); }catch(e){} return new Set(u.concat(history.map(h=>h.topic))); }
+function markTopicUsed(t){
+  if(!t) return; let u=[]; try{ u=JSON.parse(localStorage.getItem("sc_used_topics")||"[]"); }catch(e){}
+  if(!u.includes(t)){ u.push(t); try{ localStorage.setItem("sc_used_topics", JSON.stringify(u)); }catch(e){} }
+}
+let shownTopics = new Set();
+function pickTopics(){
+  const list = TOPICS[lang], used = usedTopics();
+  let fresh = list.filter(t=>!used.has(t) && !shownTopics.has(t));
+  if(fresh.length < 3) fresh = list.filter(t=>!used.has(t));            // only skip-shown ones were left
+  if(fresh.length < 3){                                                  // every topic used: start a new round
+    try{ const u=JSON.parse(localStorage.getItem("sc_used_topics")||"[]").filter(t=>!list.includes(t)); localStorage.setItem("sc_used_topics", JSON.stringify(u)); }catch(e){}
+    fresh = list.filter(t=>!history.slice(0,10).some(h=>h.topic===t));
+  }
+  const pick=[]; while(pick.length<3 && fresh.length){ pick.push(fresh.splice(Math.floor(Math.random()*fresh.length),1)[0]); }
+  pick.forEach(t=>shownTopics.add(t));
+  return pick;
 }
 function renderTopics(){
   $("topics").innerHTML = "";
-  dailyPick(TOPICS[lang]).forEach(t=>{
+  pickTopics().forEach(t=>{
     const b = document.createElement("button"); b.className="topic"; b.textContent=t;
     b.onclick = ()=>chooseTopic(t,b); $("topics").appendChild(b);
   });
@@ -264,12 +259,143 @@ function chooseTopic(t,btn){
 }
 $("ownBtn").onclick = ()=>{ $("ownInput").classList.remove("hide"); $("ownInput").focus(); chooseTopic($("ownInput").value.trim(), $("ownBtn")); };
 $("ownInput").oninput = e => chooseTopic(e.target.value.trim(), $("ownBtn"));
+$("newTopics").onclick = ()=>{ if(!recording){ renderTopics(); chooseTopic(""); } };
 document.querySelectorAll("#langSeg button").forEach(b=>b.onclick=()=>{
   if(recording) return;
   document.querySelectorAll("#langSeg button").forEach(x=>x.classList.remove("on"));
-  b.classList.add("on"); lang=b.dataset.l; renderTopics(); chooseTopic("");
+  b.classList.add("on"); lang=b.dataset.l; shownTopics=new Set(); renderTopics(); chooseTopic(""); if(!warmDone) showTwister();
   $("ownInput").classList.add("hide"); $("ownInput").value="";
 });
+
+// ---------- TABS ----------
+function showTab(t){
+  $("viewPractice").classList.toggle("hide", t!=="p"); $("viewDash").classList.toggle("hide", t!=="d");
+  $("tabPractice").classList.toggle("on", t==="p"); $("tabDash").classList.toggle("on", t==="d");
+  if(t==="d"){ renderHistory(); renderVideoList(); }
+  window.scrollTo({top:0});
+}
+$("tabPractice").onclick = ()=>showTab("p");
+$("tabDash").onclick = ()=>{ if(!recording && !wTick) showTab("d"); };
+
+// ---------- WARM-UP: tongue twister (listens and scores how clearly you said it) ----------
+const W_SECS = 30, W_MIN = 20;
+let warmDone=false, wRec=null, wTick=null, wStartT=0, wFinal="", wSession="", wInterim="", twIdx=null, warmResult=null;
+function twisterOfDay(){ const d=new Date(); return (d.getFullYear()*372 + d.getMonth()*31 + d.getDate()) % TWISTERS[lang].length; }
+function showTwister(){
+  if(twIdx===null || twIdx>=TWISTERS[lang].length) twIdx = twisterOfDay();
+  $("twistText").textContent = TWISTERS[lang][twIdx];
+  $("wResult").innerHTML=""; $("wLive").textContent=""; $("wTimer").textContent="0:30"; $("wBar").style.width="0";
+  $("wStart").classList.remove("hide"); $("wReady").classList.add("hide");
+}
+const normW = t => t.toLowerCase().replace(/[.,!?;:"'()।’‘\-]/g," ").split(/\s+/).filter(Boolean);
+function startWarm(){
+  if(!SR){ finishWarm(true); return; }
+  wFinal=""; wSession=""; wInterim=""; wStartT=performance.now();
+  $("wStart").classList.add("hide"); $("wReady").classList.remove("hide"); $("wReady").disabled=true;
+  $("wReady").textContent = "Keep going… (ready in "+W_MIN+" s)"; $("wResult").innerHTML="";
+  const go = ()=>{
+    wRec = new SR(); wRec.lang = lang==="en" ? "en-IN" : bnCode; wRec.continuous = true; wRec.interimResults = true;
+    wRec.onresult = ev=>{
+      const fin=[]; let interim="";
+      for(let i=0;i<ev.results.length;i++){ const t=ev.results[i][0].transcript.trim(); if(!t) continue;
+        if(ev.results[i].isFinal){ const prev=fin[fin.length-1];
+          if(prev && t.toLowerCase().startsWith(prev.toLowerCase())) fin[fin.length-1]=t; else if(!(prev && prev.toLowerCase().startsWith(t.toLowerCase()))) fin.push(t); }
+        else interim += " "+t; }
+      const nf = fin.join(" "); if(wSession && !continues(wSession, nf)) wFinal += " "+wSession;
+      wSession = nf; wInterim = interim.trim();
+      $("wLive").textContent = (wFinal+" "+wSession+" "+wInterim).replace(/\s+/g," ").trim().split(" ").slice(-14).join(" ");
+    };
+    wRec.onerror = e=>{ if(e.error==="language-not-supported" && lang==="bn" && bnCode==="bn-BD") bnCode="bn-IN"; };
+    wRec.onend = ()=>{ wFinal += " "+wSession+(wInterim?" "+wInterim:""); wSession=""; wInterim=""; if(wTick) go(); };
+    try{ wRec.start(); }catch(e){}
+  };
+  go();
+  wTick = setInterval(()=>{
+    const el=(performance.now()-wStartT)/1000, left=Math.max(0,W_SECS-el);
+    $("wTimer").textContent="0:"+String(Math.ceil(left)).padStart(2,"0"); $("wBar").style.width=Math.min(100,el/W_SECS*100)+"%";
+    if(el>=W_MIN && $("wReady").disabled){ $("wReady").disabled=false; $("wReady").textContent="Ready → go to recording"; }
+    if(left<=0) endWarm();
+  }, 250);
+}
+function endWarm(){
+  if(!wTick) return; clearInterval(wTick); wTick=null;
+  try{ wRec.stop(); }catch(e){}
+  $("wReady").disabled=false; $("wReady").textContent="Ready → go to recording";
+  setTimeout(()=>{
+    const said = normW(wFinal+" "+wSession+" "+wInterim), target = normW(TWISTERS[lang][twIdx]);
+    if(!said.length){ $("wResult").innerHTML = `<div class="warn">I couldn't hear the twister. Check the microphone is allowed — you can still go on to recording.</div>`; warmResult=null; return; }
+    const reps = Math.max(1, Math.round(said.length/target.length));
+    const cnt={}; said.forEach(w=>cnt[w]=(cnt[w]||0)+1);
+    const need={}; target.forEach(w=>need[w]=(need[w]||0)+reps);
+    let hit=0; for(const w in need) hit += Math.min(need[w], cnt[w]||0);
+    const acc = Math.round(hit/(target.length*reps)*100);
+    const missed = Object.keys(need).filter(w=>(cnt[w]||0) < need[w]/2);
+    warmResult = {twister:TWISTERS[lang][twIdx], acc, reps};
+    const c = acc>=85?"g":acc>=65?"o":"b";
+    $("wResult").innerHTML = `<div class="overall" style="margin:4px 0 10px"><div class="ring ${c}" style="width:56px;height:56px;font-size:18px">${acc}%</div>
+      <div><b>${acc>=85?"Crisp and clear!":acc>=65?"Good — a few slips":"Slow down and over-pronounce"}</b><div class="sub">About ${reps} repetition${reps>1?"s":""} heard</div></div></div>`
+      + (missed.length? `<div class="sub">Words that came out unclear: ${missed.map(w=>`<span class="miss">${esc(w)}</span>`).join(" ")}</div>`:"");
+  }, 1200);
+}
+function finishWarm(skipped){
+  if(wTick) endWarm();
+  if(skipped) warmResult = null;
+  warmDone = true;
+  $("warmCard").classList.add("hide"); $("mainPractice").classList.remove("hide");
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+$("wStart").onclick = startWarm;
+$("wReady").onclick = ()=>finishWarm(false);
+$("wSkip").onclick = ()=>finishWarm(true);
+$("wAnother").onclick = ()=>{ if(wTick) return; twIdx = (twIdx+1+Math.floor(Math.random()*(TWISTERS[lang].length-1))) % TWISTERS[lang].length; $("twistText").textContent=TWISTERS[lang][twIdx]; $("wResult").innerHTML=""; $("wLive").textContent=""; };
+
+// ---------- SAVED VIDEOS: kept 7 days inside the app (IndexedDB), never uploaded ----------
+const VID_KEEP_MS = 7*864e5;
+let vdb=null;
+function openVDB(){
+  if(vdb) return Promise.resolve(vdb);
+  return new Promise(res=>{
+    try{ const r = indexedDB.open("speech-coach-videos", 1);
+      r.onupgradeneeded = ()=> r.result.createObjectStore("videos", {keyPath:"id"});
+      r.onsuccess = ()=>{ vdb=r.result; res(vdb); }; r.onerror = ()=>res(null);
+    }catch(e){ res(null); }
+  });
+}
+async function vdbDo(mode, fn){
+  const db = await openVDB(); if(!db) return null;
+  return new Promise(res=>{ try{ const tx=db.transaction("videos",mode), st=tx.objectStore("videos"); const r=fn(st);
+    tx.oncomplete=()=>res(r&&r.result!==undefined?r.result:true); tx.onerror=()=>res(null); }catch(e){ res(null); } });
+}
+const saveVideo = v => vdbDo("readwrite", st=>st.put(v));
+const getVideo  = id => vdbDo("readonly", st=>st.get(id));
+const delVideo  = id => vdbDo("readwrite", st=>st.delete(id));
+const allVideoMeta = async ()=>{
+  const all = await vdbDo("readonly", st=>st.getAll()) || [];
+  return all.map(v=>({id:v.id, date:v.date, topic:v.topic, size:v.blob?v.blob.size:0})).sort((a,b)=>b.date.localeCompare(a.date));
+};
+async function purgeOldVideos(){
+  const now=Date.now(); for(const v of await allVideoMeta()) if(now-new Date(v.date) > VID_KEEP_MS) await delVideo(v.id);
+}
+let playURL=null;
+async function playSaved(id, box){
+  const v = await getVideo(id); if(!v || !v.blob){ box.innerHTML = `<div class="sub">This video is no longer saved.</div>`; return; }
+  if(playURL) URL.revokeObjectURL(playURL); playURL = URL.createObjectURL(v.blob);
+  box.innerHTML = `<video controls playsinline src="${playURL}" style="width:100%;max-height:360px;border-radius:10px;background:#000;transform:scaleX(-1)"></video>`;
+}
+async function renderVideoList(){
+  const list = await allVideoMeta(), box = $("videoList");
+  if(!list.length){ box.textContent = "No saved videos yet. Tick 🎥 Video mode when you record."; return; }
+  box.innerHTML = list.map(v=>{
+    const left = Math.max(0, Math.ceil((VID_KEEP_MS-(Date.now()-new Date(v.date)))/864e5));
+    return `<div class="vrow"><div><b>${new Date(v.date).toLocaleDateString([], {day:"numeric",month:"short"})} ${new Date(v.date).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b>
+      <div class="sub">${esc(v.topic||"")} · ${(v.size/1048576).toFixed(1)} MB · deletes in ${left} day${left===1?"":"s"}</div></div>
+      <div style="white-space:nowrap"><button class="btn" data-play="${esc(v.id)}">▶</button> <button class="btn" data-del="${esc(v.id)}">🗑</button></div></div>`;
+  }).join("");
+  box.querySelectorAll("[data-play]").forEach(b=>b.onclick=()=>playSaved(b.dataset.play, $("videoPlay")));
+  box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{ await delVideo(b.dataset.del); $("videoPlay").innerHTML=""; renderVideoList(); });
+}
+try{ navigator.storage && navigator.storage.persist && navigator.storage.persist(); }catch(e){}
+purgeOldVideos();
 
 // ---------- SUPPORT CHECK ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -289,7 +415,9 @@ let recording=false, rec=null, stream=null, ctx=null, analyser=null, tick=null, 
 let bnCode="bn-BD", firstWordT=0, endT=0;
 let sessionFinal="", finalText="", interimText="", frames=[], recErr="", speechMarks=[], mediaRec=null, chunks=[], audioURL=null;
 
+let curId=null;
 async function start(){
+  curId = newId();
   firstWordT=0; endT=0;
   frames=[]; finalText=""; sessionFinal=""; interimText=""; recErr=""; speechMarks=[]; chunks=[];
   if(audioURL){ URL.revokeObjectURL(audioURL); audioURL=null; }
@@ -338,6 +466,13 @@ async function start(){
     if(left<=0) stop();
   }, FRAME_MS);
 }
+// is "next" the same running text as "prev" (grown or slightly corrected), rather than a fresh batch?
+function continues(prev, next){
+  const a = prev.toLowerCase().split(/\s+/).filter(Boolean), b = next.toLowerCase().split(/\s+/).filter(Boolean);
+  if(!a.length) return true;
+  let k=0; while(k<a.length && k<b.length && a[k]===b[k]) k++;
+  return k >= Math.max(1, Math.ceil(Math.min(a.length, b.length)*0.6));
+}
 function startRecognition(){
   rec = new SR(); rec.lang = lang==="en" ? "en-IN" : bnCode;   // Indian English suits South Asian accents
   rec.continuous = true; rec.interimResults = true;
@@ -354,8 +489,12 @@ function startRecognition(){
         else fin.push(t);
       } else interim += " " + t;
     }
-    sessionFinal = fin.join(" "); interimText = interim.trim();
-    $("live").textContent = (finalText+" "+sessionFinal+" "+interimText).replace(/\s+/g," ").trim();
+    const newFinal = fin.join(" ");
+    // Phones sometimes start a fresh result list mid-session: keep the earlier words instead of replacing them
+    if(sessionFinal && !continues(sessionFinal, newFinal)) finalText += " " + sessionFinal;
+    sessionFinal = newFinal; interimText = interim.trim();
+    const all = (finalText+" "+sessionFinal+" "+interimText).replace(/\s+/g," ").trim();
+    $("live").textContent = "🗣 " + all.split(" ").filter(Boolean).length + " words heard\n" + all;
     if(PHONE_MODE) $("lvl").style.width = "100%";
   };
   rec.onspeechstart = ()=> speechMarks.push(["s", performance.now()]);
@@ -388,7 +527,8 @@ function stop(){
   if(mediaRec && mediaRec.state!=="inactive"){
     const isVid = !!(stream && stream.getVideoTracks().length);
     mediaRec.onstop = ()=>{ const u = URL.createObjectURL(new Blob(chunks, {type: mediaRec.mimeType || (isVid?"video/webm":"audio/webm")}));
-      if(isVid) vidURL = u; else audioURL = u; showPlayer(); };
+      if(isVid){ vidURL = u; if(!listenOnly) saveVideo({id:curId, date:new Date().toISOString(), topic, blob:new Blob(chunks, {type: mediaRec.mimeType || "video/webm"})}); }
+      else audioURL = u; showPlayer(); };
     mediaRec.stop();
   }
   if(stream) stream.getTracks().forEach(t=>t.stop());
@@ -397,6 +537,7 @@ function stop(){
   $("lvl").style.width="0";
   setTimeout(()=>{   // wait for last words to arrive
     const text = (finalText + " " + sessionFinal + " " + interimText).replace(/\s+/g," ").trim();
+    resToPractice();
     if(listenOnly){
       $("ring").textContent="🎧"; $("ring").className="ring g";
       $("verdict").textContent="Practice recording — listen back below";
@@ -412,13 +553,13 @@ function stop(){
 }
 function showPlayer(){
   const box = $("player");
-  if(vidURL){ box.innerHTML = `<video controls playsinline src="${vidURL}"></video><div class="sub">🎥 Watch yourself back${PHONE_MODE&&!listenOnly?" (silent on phones — the mic is busy recognising words)":""}. Only kept until you close this page — never saved or uploaded.</div>`; }
+  if(vidURL){ box.innerHTML = `<video controls playsinline src="${vidURL}"></video><div class="sub">🎥 Watch yourself back${PHONE_MODE&&!listenOnly?" (silent on phones — the mic is busy recognising words)":""}. ${listenOnly?"Not saved.":"Saved inside the app for 7 days (Dashboard → Saved videos) — never uploaded."}</div>`; }
   else if(audioURL){ box.innerHTML = `<audio controls src="${audioURL}" style="width:100%"></audio><div class="sub">Only kept until you close this page — never saved or uploaded.</div>`; }
   else if(PHONE_MODE && !listenOnly){ box.innerHTML = `<div class="sub">▶️ Want to hear yourself? Tick <b>🎧 Practice &amp; listen mode</b> above the Start button. (On phones the microphone can do only one job at a time.)</div>`; }
   else box.innerHTML = "";
 }
 $("recBtn").onclick = ()=> recording ? stop() : start();
-$("againBtn").onclick = ()=>{ $("resCard").classList.add("hide"); window.scrollTo({top:$("recCard").offsetTop-10,behavior:"smooth"}); };
+$("againBtn").onclick = ()=>{ $("resCard").classList.add("hide"); renderTopics(); chooseTopic(""); window.scrollTo({top:$("recCard").offsetTop-10,behavior:"smooth"}); };
 function alert2(msg){ $("live").textContent = "⚠️ " + msg; }
 
 // ---------- VIDEO MODE: eye contact & body language (runs on this device; video never leaves it) ----------
@@ -769,8 +910,10 @@ function analyse(text, secs){
   window.scrollTo({top:$("resCard").offsetTop-10,behavior:"smooth"});
 
   // --- save ---
-  const entry = {id:newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long2,
+  const entry = {id:curId||newId(), date:new Date().toISOString(), lang, topic, overall, wpm, fillers:fillerCount, longPauses:long2,
                  metrics:M.map(m=>({k:m.k,v:m.v,s:m.s})), transcript:text, tips};
+  if(warmResult) entry.warmup = warmResult;
+  markTopicUsed(topic);
   if(V) entry.video = {score:V.score, eyePct:V.eyePct, metrics:V.metrics.map(m=>({k:m.k,v:m.v,s:m.s})), tips:V.tips};
   history.unshift(entry); history = history.slice(0,200);
   saveLocal();
@@ -872,7 +1015,7 @@ function renderProgress(){
   } else if(thisW!==null) w = `📊 This week's average: ${thisW}. Next week you'll see a comparison.`;
   $("weekly").textContent = w;
   $("chartScore").innerHTML = svgLine(last.map(h=>h.overall), 0, 100, null, "#2f6fed");
-  $("chartWpm").innerHTML = svgLine(last.map(h=>h.wpm), 60, 220, [120,160], "#d48a00");
+  $("chartWpm").innerHTML = svgLine(last.map(h=>h.wpm), 60, 220, [120,150], "#d48a00");
   const ve = last.filter(h=>h.video && h.video.eyePct!=null).map(h=>h.video.eyePct);
   $("eyeChartWrap").classList.toggle("hide", !ve.length);
   $("chartEye").innerHTML = svgLine(ve, 0, 100, [60,100], "#7a4fd6");
@@ -1032,6 +1175,7 @@ function renderHistory(){
   });
 }
 // reopen the full score card of a past session
+function resToPractice(){ const rc=$("resCard"); if(rc.parentNode.id!=="mainPractice") $("recCard").after(rc); }
 function showSession(h){
   const cls = s=> s>=85?"g":s>=65?"o":"b", lab = s=> s>=85?"Good":s>=65?"Okay":"Work on";
   const ms = Array.isArray(h.metrics) ? h.metrics : [];
@@ -1044,13 +1188,15 @@ function showSession(h){
   $("coach").innerHTML = fb.html;
   renderVideo(h.video && Array.isArray(h.video.metrics) ? h.video : null);
   $("transcript").textContent = h.transcript || "(no transcript)";
-  $("player").innerHTML = `<div class="sub">🕘 Past session — recordings are never kept.</div>`;
+  $("player").innerHTML = `<div class="sub">🕘 Past session.</div>`;
+  getVideo(h.id).then(v=>{ if(v && v.blob) playSaved(h.id, $("player")); });
+  $("dashSession").appendChild($("resCard"));
   lastReport = makeReport(h, h.tips||[]) + (fb.plain ? "\n\nCoach's feedback:\n" + fb.plain : "");
   $("resCard").classList.remove("hide");
   window.scrollTo({top:$("resCard").offsetTop-10, behavior:"smooth"});
 }
 
-renderTopics(); renderHistory(); syncAll();
+renderTopics(); renderHistory(); syncAll(); showTwister();
 if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 </body>
