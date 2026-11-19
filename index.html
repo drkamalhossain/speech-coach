@@ -413,13 +413,13 @@ const PHONE_MODE = isAndroid;   // Android can't share the mic between recording
 if(PHONE_MODE) document.getElementById("listenWrap").classList.remove("hide");
 let listenOnly=false;
 let recording=false, rec=null, stream=null, ctx=null, analyser=null, tick=null, startT=0;
-let bnCode="bn-BD", firstWordT=0, endT=0;
+let bnCode="bn-BD", firstWordT=0, endT=0, lastWordT=0, lastWordCount=0;
 let sessionFinal="", finalText="", interimText="", frames=[], recErr="", speechMarks=[], mediaRec=null, chunks=[], audioURL=null;
 
 let curId=null;
 async function start(){
   curId = newId();
-  firstWordT=0; endT=0;
+  firstWordT=0; endT=0; lastWordT=0; lastWordCount=0;
   frames=[]; finalText=""; sessionFinal=""; interimText=""; recErr=""; speechMarks=[]; chunks=[];
   if(audioURL){ URL.revokeObjectURL(audioURL); audioURL=null; }
   if(vidURL){ URL.revokeObjectURL(vidURL); vidURL=null; }
@@ -479,6 +479,8 @@ function startRecognition(){
   rec.continuous = true; rec.interimResults = true;
   rec.onresult = ev=>{
     if(!firstWordT) firstWordT = performance.now() - 700;   // first word heard (minus recognition delay)
+    { let n=0; for(let i=0;i<ev.results.length;i++) n += ev.results[i][0].transcript.trim().split(/\s+/).filter(Boolean).length;
+      if(n !== lastWordCount){ lastWordCount = n; lastWordT = performance.now(); } }   // time of the latest word heard
     // rebuild this listening session's text from all results (Android re-sends growing text)
     const fin=[]; let interim="";
     for(let i=0;i<ev.results.length;i++){
@@ -787,6 +789,10 @@ const sd=a=>{ const m=mean(a); return Math.sqrt(mean(a.map(x=>(x-m)**2))); };
 const db=x=>20*Math.log10(Math.max(x,1e-6));
 
 function analyse(text, secs){
+  // --- talking window: from your first word to your last word (silence after you finish doesn't count) ---
+  const winStart = firstWordT || startT, winEnd = lastWordT ? Math.min(endT, lastWordT + 1500) : endT;
+  const activeSecs = Math.max(10, Math.min(secs, (winEnd - winStart)/1000));
+  const fi0 = Math.max(0, Math.floor((winStart-startT)/FRAME_MS)), fi1 = Math.ceil((winEnd-startT)/FRAME_MS);
   // --- voice activity from loudness ---
   const r = frames.map(f=>f.rms);
   const noise=pct(r,.1), peak=pct(r,.9), th = noise + 0.25*(peak-noise);
@@ -796,17 +802,17 @@ function analyse(text, secs){
   const segs=[]; let s=-1;
   voiced.forEach((v,i)=>{ if(v&&s<0) s=i; if(!v&&s>=0){segs.push([s,i]); s=-1;} });
   if(s>=0) segs.push([s,voiced.length]);
-  const gaps=[]; for(let i=1;i<segs.length;i++) gaps.push((segs[i][0]-segs[i-1][1])*FRAME_MS/1000);
+  const gaps=[]; for(let i=1;i<segs.length;i++) if(segs[i-1][1]>=fi0 && segs[i][0]<=fi1) gaps.push((segs[i][0]-segs[i-1][1])*FRAME_MS/1000);
   const pauses = gaps.filter(g=>g>=0.5);
   const natural = pauses.filter(g=>g<3).length, long = pauses.filter(g=>g>=3).length;
-  let speakSecs = voiced.filter(Boolean).length*FRAME_MS/1000;
+  let speakSecs = voiced.filter((v,i)=>v && i>=fi0 && i<=fi1).length*FRAME_MS/1000;
   let natural2=natural, long2=long, pauseCount=pauses.length, timingKnown = frames.length>0;
   if(PHONE_MODE){
     // estimate from the speech service's start/end signals (includes ~0.5 s restart delay)
     const segs2=[]; let st=null;
     speechMarks.forEach(([t,ms])=>{ if(t==="s") st=ms; else if(st!==null){ segs2.push([st,ms]); st=null; } });
     if(st!==null) segs2.push([st, startT+secs*1000]);
-    const g2=[]; for(let i=1;i<segs2.length;i++) g2.push((segs2[i][0]-segs2[i-1][1])/1000);
+    const g2=[]; for(let i=1;i<segs2.length;i++) if(segs2[i][0] <= winEnd) g2.push((segs2[i][0]-segs2[i-1][1])/1000);
     const p2=g2.filter(g=>g>=1); natural2=p2.filter(g=>g<3.5).length; long2=p2.filter(g=>g>=3.5).length; pauseCount=p2.length;
     speakSecs = segs2.reduce((a,[x,y])=>a+(y-x)/1000,0);
     timingKnown = segs2.length>0;
@@ -832,7 +838,7 @@ function analyse(text, secs){
   const clean = text.toLowerCase().replace(/[.,!?;:"'()।]/g," ").replace(/\s+/g," ").trim();
   const words = clean ? clean.split(" ") : [];
   // speed is measured from your first word, not from pressing Start
-  const spanSecs = firstWordT ? Math.max(10, Math.min(secs, (endT-firstWordT)/1000)) : secs;
+  const spanSecs = activeSecs;
   const wpm = Math.round(words.length / (spanSecs/60));
   const talkPace = speakSecs > 5 ? Math.round(words.length / (speakSecs/60)) : null;
   const padded = " "+clean+" ";
@@ -842,7 +848,7 @@ function analyse(text, secs){
   const freq={}; words.forEach(w=>{ if(w.length>2 && !STOP[lang].has(w)) freq[w]=(freq[w]||0)+1; });
   const repeats = Object.entries(freq).filter(([w,n])=>n>=4).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const variety = words.length ? new Set(words).size/words.length : 0;
-  const pausesPerMin = pauseCount/(secs/60);
+  const pausesPerMin = pauseCount/(activeSecs/60);
 
   const V = analyseVideo(secs);
   if(!words.length){
@@ -876,7 +882,7 @@ function analyse(text, secs){
     !PHONE_MODE && {k:"Sentence endings", v: trail>0?"drops "+trail.toFixed(0)+" dB":"steady", s: band(trail,-99,3,5), w:0.5, note:"Keep volume to the last word"},
     !PHONE_MODE && {k:"Volume steadiness", v: loudSD.toFixed(1)+" dB spread", s: band(loudSD,0,6,5), w:0.5, note:"Even, confident volume"},
     {k:"Word variety", v: Math.round(variety*100)+"% unique"+(repeats.length?" · repeats: "+repeats.map(([w,n])=>w+"×"+n).join(", "):""), s: band(variety*100,60,100,25), w:0.5, note:"Avoid repeating the same words"},
-    timingKnown && {k:"Speaking time", v: Math.round(speakSecs)+" of "+Math.round(secs)+" s", s: band(speakSecs/secs*100,65,90,30), w:0.5, note:"Too low = hesitating"}
+    timingKnown && {k:"Speaking time", v: Math.round(speakSecs)+" of "+Math.round(secs)+" s", s: band(speakSecs/secs*100,65,90,30), w:0.5, note:"Try to talk for the whole time"}
   ].filter(Boolean);
   M.forEach(m=>m.s=Math.round(m.s));
   const overall = Math.round(M.reduce((a,m)=>a+m.s*m.w,0) / M.reduce((a,m)=>a+m.w,0));
