@@ -131,7 +131,7 @@
     <div class="timer" id="timer">1:00</div>
     <div class="meter"><i id="lvl"></i></div>
     <div style="height:12px"></div>
-    <label id="listenWrap" class="sub hide" style="display:block;margin-bottom:10px"><input type="checkbox" id="listenOnly"> 🎧 Practice &amp; listen mode — record my voice to play back (this minute won't be scored)</label>
+    <label id="listenWrap" class="sub hide" style="display:block;margin-bottom:10px"><input type="checkbox" id="listenOnly"> 🎧 Practice &amp; listen mode — record my voice to play back (this minute won't be scored; with 🎥 Video mode the video is still saved for 7 days)</label>
     <button class="big" id="recBtn" disabled>Start speaking</button>
     <div class="live" id="live"></div>
   </div>
@@ -364,7 +364,7 @@ function openVDB(){
 async function vdbDo(mode, fn){
   const db = await openVDB(); if(!db) return null;
   return new Promise(res=>{ try{ const tx=db.transaction("videos",mode), st=tx.objectStore("videos"); const r=fn(st);
-    tx.oncomplete=()=>res(r&&r.result!==undefined?r.result:true); tx.onerror=()=>res(null); }catch(e){ res(null); } });
+    tx.oncomplete=()=>res(r&&r.result!==undefined?r.result:true); tx.onerror=()=>res(null); tx.onabort=()=>res(null); }catch(e){ res(null); } });
 }
 const saveVideo = v => vdbDo("readwrite", st=>st.put(v));
 const getVideo  = id => vdbDo("readonly", st=>st.get(id));
@@ -527,7 +527,9 @@ function stop(){
   if(mediaRec && mediaRec.state!=="inactive"){
     const isVid = !!(stream && stream.getVideoTracks().length);
     mediaRec.onstop = ()=>{ const u = URL.createObjectURL(new Blob(chunks, {type: mediaRec.mimeType || (isVid?"video/webm":"audio/webm")}));
-      if(isVid){ vidURL = u; if(!listenOnly) saveVideo({id:curId, date:new Date().toISOString(), topic, blob:new Blob(chunks, {type: mediaRec.mimeType || "video/webm"})}); }
+      if(isVid){ vidURL = u; vidSaved = null;   // keep every video for 7 days — including Practice & listen mode
+        saveVideo({id:curId, date:new Date().toISOString(), topic, blob:new Blob(chunks, {type: mediaRec.mimeType || "video/webm"})})
+          .then(ok=>{ vidSaved = !!ok; showPlayer(); renderVideoList(); }); }
       else audioURL = u; showPlayer(); };
     mediaRec.stop();
   }
@@ -553,7 +555,8 @@ function stop(){
 }
 function showPlayer(){
   const box = $("player");
-  if(vidURL){ box.innerHTML = `<video controls playsinline src="${vidURL}"></video><div class="sub">🎥 Watch yourself back${PHONE_MODE&&!listenOnly?" (silent on phones — the mic is busy recognising words)":""}. ${listenOnly?"Not saved.":"Saved inside the app for 7 days (Dashboard → Saved videos) — never uploaded."}</div>`; }
+  if(vidURL){ const saveMsg = vidSaved===null ? "Saving…" : vidSaved ? "✅ Saved inside the app for 7 days (Dashboard → Saved videos) — never uploaded." : "⚠️ Couldn't save this video on this phone (storage full or private tab) — it will be lost when you close the page.";
+    box.innerHTML = `<video controls playsinline src="${vidURL}"></video><div class="sub">🎥 Watch yourself back${PHONE_MODE&&!listenOnly?" (silent on phones — the mic is busy recognising words)":""}. ${saveMsg}</div>`; }
   else if(audioURL){ box.innerHTML = `<audio controls src="${audioURL}" style="width:100%"></audio><div class="sub">Only kept until you close this page — never saved or uploaded.</div>`; }
   else if(PHONE_MODE && !listenOnly){ box.innerHTML = `<div class="sub">▶️ Want to hear yourself? Tick <b>🎧 Practice &amp; listen mode</b> above the Start button. (On phones the microphone can do only one job at a time.)</div>`; }
   else box.innerHTML = "";
@@ -567,7 +570,7 @@ const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const FACE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 const VID_MS = 150;                       // ~6–7 checks per second
-let faceLM=null, poseLM=null, visionLoading=null, vframes=[], vidURL=null, vTimer=null, lastVT=0;
+let faceLM=null, poseLM=null, visionLoading=null, vframes=[], vidURL=null, vidSaved=null, vTimer=null, lastVT=0;
 const videoOn = ()=> $("videoMode").checked && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
 function vStatus(msg){ const s=$("vidStatus"); s.textContent = msg||""; s.classList.toggle("hide", !msg); }
